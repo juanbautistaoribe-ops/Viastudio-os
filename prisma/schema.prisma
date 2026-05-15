@@ -1,0 +1,413 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Users / Auth ────────────────────────────────────────────────────────────
+
+model Profile {
+  id        String   @id @default(uuid())
+  userId    String   @unique @map("user_id")
+  name      String
+  email     String   @unique
+  avatar    String?
+  role      UserRole @default(MEMBER)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tasksCreated   Task[]     @relation("TaskCreator")
+  tasksAssigned  Task[]     @relation("TaskAssignee")
+  leadsAssigned  Lead[]     @relation("LeadAssignee")
+  documents      Document[]
+  comments       Comment[]
+  activities     Activity[]
+  conversations  AIConversation[]
+  eventsCreated  CalendarEvent[]
+
+  @@map("profiles")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+// ─── Clients / CRM ───────────────────────────────────────────────────────────
+
+model Client {
+  id           String       @id @default(uuid())
+  name         String
+  company      String
+  email        String
+  phone        String?
+  website      String?
+  avatar       String?
+  status       ClientStatus @default(ACTIVE)
+  services     ServiceType[]
+  monthlyValue Float        @default(0) @map("monthly_value")
+  currency     String       @default("USD")
+  startDate    DateTime     @map("start_date")
+  endDate      DateTime?    @map("end_date")
+  industry     String?
+  country      String?
+  tags         String[]
+  notes        String?
+  assignedTo   String?      @map("assigned_to")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  contacts  Contact[]
+  tasks     Task[]
+  leads     Lead[]
+  events    CalendarEvent[]
+  payments  Payment[]
+  activities Activity[]
+
+  @@map("clients")
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  PROSPECT
+  CHURNED
+}
+
+enum ServiceType {
+  SOCIAL_MEDIA
+  PAID_ADS
+  SEO
+  CONTENT
+  EMAIL
+  BRANDING
+  WEB
+  CONSULTING
+  STRATEGY
+}
+
+model Contact {
+  id        String  @id @default(uuid())
+  clientId  String  @map("client_id")
+  name      String
+  role      String
+  email     String
+  phone     String?
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("contacts")
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  clientId    String        @map("client_id")
+  amount      Float
+  currency    String        @default("USD")
+  status      PaymentStatus @default(PENDING)
+  dueDate     DateTime      @map("due_date")
+  paidAt      DateTime?     @map("paid_at")
+  description String?
+  invoiceUrl  String?       @map("invoice_url")
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// ─── Tasks ───────────────────────────────────────────────────────────────────
+
+model Task {
+  id             String       @id @default(uuid())
+  title          String
+  description    String?
+  status         TaskStatus   @default(TODO)
+  priority       TaskPriority @default(MEDIUM)
+  assigneeId     String?      @map("assignee_id")
+  createdById    String       @map("created_by_id")
+  clientId       String?      @map("client_id")
+  dueDate        DateTime?    @map("due_date")
+  startDate      DateTime?    @map("start_date")
+  estimatedHours Float?       @map("estimated_hours")
+  tags           String[]
+  order          Int          @default(0)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  assignee    Profile?  @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy   Profile   @relation("TaskCreator", fields: [createdById], references: [id])
+  client      Client?   @relation(fields: [clientId], references: [id])
+  checklist   ChecklistItem[]
+  attachments Attachment[]
+  comments    Comment[]
+
+  @@map("tasks")
+}
+
+enum TaskStatus {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model ChecklistItem {
+  id        String  @id @default(uuid())
+  taskId    String  @map("task_id")
+  label     String
+  completed Boolean @default(false)
+  order     Int     @default(0)
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("checklist_items")
+}
+
+model Attachment {
+  id         String   @id @default(uuid())
+  taskId     String?  @map("task_id")
+  documentId String?  @map("document_id")
+  name       String
+  url        String
+  size       Int
+  mimeType   String   @map("mime_type")
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  task     Task?     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  document Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  taskId    String?  @map("task_id")
+  content   String
+  authorId  String   @map("author_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  task   Task?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author Profile @relation(fields: [authorId], references: [id])
+
+  @@map("comments")
+}
+
+// ─── Leads ───────────────────────────────────────────────────────────────────
+
+model Lead {
+  id              String       @id @default(uuid())
+  name            String
+  company         String
+  email           String
+  phone           String?
+  website         String?
+  status          LeadStatus   @default(NEW)
+  source          LeadSource   @default(INBOUND)
+  priority        LeadPriority @default(MEDIUM)
+  potentialValue  Float        @default(0) @map("potential_value")
+  currency        String       @default("USD")
+  services        ServiceType[]
+  notes           String?
+  nextAction      String?      @map("next_action")
+  nextActionDate  DateTime?    @map("next_action_date")
+  assignedTo      String?      @map("assigned_to")
+  clientId        String?      @map("client_id")
+  tags            String[]
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  assignee Profile? @relation("LeadAssignee", fields: [assignedTo], references: [id])
+  client   Client?  @relation(fields: [clientId], references: [id])
+
+  @@map("leads")
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum LeadSource {
+  REFERRAL
+  INBOUND
+  OUTBOUND
+  SOCIAL
+  ADS
+  EVENT
+  OTHER
+}
+
+enum LeadPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// ─── Calendar / Events ───────────────────────────────────────────────────────
+
+model CalendarEvent {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  type        EventType @default(MEETING)
+  startDate   DateTime  @map("start_date")
+  endDate     DateTime  @map("end_date")
+  allDay      Boolean   @default(false) @map("all_day")
+  clientId    String?   @map("client_id")
+  taskId      String?   @map("task_id")
+  attendees   String[]
+  location    String?
+  meetingUrl  String?   @map("meeting_url")
+  createdById String    @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  client    Client?  @relation(fields: [clientId], references: [id])
+  createdBy Profile  @relation(fields: [createdById], references: [id])
+
+  @@map("calendar_events")
+}
+
+enum EventType {
+  MEETING
+  DEADLINE
+  PUBLICATION
+  FOLLOWUP
+  INTERNAL
+  OTHER
+}
+
+// ─── Documents / SOPs ────────────────────────────────────────────────────────
+
+model Document {
+  id          String   @id @default(uuid())
+  title       String
+  content     String   @default("")
+  type        DocType  @default(SOP)
+  category    String   @default("General")
+  tags        String[]
+  isFavorite  Boolean  @default(false) @map("is_favorite")
+  isPublished Boolean  @default(false) @map("is_published")
+  authorId    String   @map("author_id")
+  views       Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  author      Profile    @relation(fields: [authorId], references: [id])
+  attachments Attachment[]
+
+  @@map("documents")
+}
+
+enum DocType {
+  SOP
+  GUIDE
+  TEMPLATE
+  CHECKLIST
+  PROMPT
+  RESOURCE
+}
+
+// ─── AI Conversations ────────────────────────────────────────────────────────
+
+model AIConversation {
+  id          String     @id @default(uuid())
+  title       String
+  function    AIFunction @default(CHAT)
+  contextId   String?    @map("context_id")
+  createdById String     @map("created_by_id")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  messages  AIMessage[]
+  createdBy Profile    @relation(fields: [createdById], references: [id])
+
+  @@map("ai_conversations")
+}
+
+model AIMessage {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  role           String
+  content        String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("ai_messages")
+}
+
+enum AIFunction {
+  CHAT
+  WEEKLY_SUMMARY
+  CAMPAIGN_ANALYSIS
+  CONTENT_IDEAS
+  COPYWRITING
+  MEETING_SUMMARY
+  TASK_GENERATOR
+  CLIENT_ANALYSIS
+  STRATEGY
+  MESSAGE_DRAFT
+}
+
+// ─── Activity Feed ───────────────────────────────────────────────────────────
+
+model Activity {
+  id          String       @id @default(uuid())
+  type        ActivityType
+  title       String
+  description String?
+  userId      String       @map("user_id")
+  clientId    String?      @map("client_id")
+  entityId    String?      @map("entity_id")
+  entityType  String?      @map("entity_type")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  user   Profile @relation(fields: [userId], references: [id])
+  client Client? @relation(fields: [clientId], references: [id])
+
+  @@map("activities")
+}
+
+enum ActivityType {
+  CLIENT_CREATED
+  CLIENT_UPDATED
+  TASK_CREATED
+  TASK_COMPLETED
+  LEAD_CREATED
+  LEAD_WON
+  LEAD_LOST
+  DOC_CREATED
+  COMMENT_ADDED
+  PAYMENT_RECEIVED
+}
