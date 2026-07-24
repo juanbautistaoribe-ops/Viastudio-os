@@ -6,23 +6,28 @@ import { ClientCard } from '@/components/crm/client-card'
 import { ClientFilters } from '@/components/crm/client-filters'
 import { ClientTable } from '@/components/crm/client-table'
 import { EmptyState } from '@/components/shared/empty-state'
+import { NewClientModal } from '@/components/crm/new-client-modal'
 import type { Client, ClientStatus, ViewMode } from '@/types'
 import { Users } from 'lucide-react'
 
 export default function CRMPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
+  const [showNew, setShowNew] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
 
-  useEffect(() => {
+  function loadClients() {
+    setLoading(true)
     fetch('/api/clients')
       .then(r => r.json())
       .then(data => setClients(Array.isArray(data) ? data : []))
       .catch(() => setClients([]))
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(() => { loadClients() }, [])
 
   const filtered = useMemo(() => {
     return clients.filter((c) => {
@@ -70,7 +75,7 @@ export default function CRMPage() {
             onStatusChange={setStatusFilter}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
-            onNew={() => {}}
+            onNew={() => setShowNew(true)}
           />
         </div>
 
@@ -94,6 +99,11 @@ export default function CRMPage() {
           <ClientTable clients={filtered} />
         )}
       </main>
+      <NewClientModal
+        open={showNew}
+        onClose={() => setShowNew(false)}
+        onCreated={loadClients}
+      />
     </div>
   )
 }
