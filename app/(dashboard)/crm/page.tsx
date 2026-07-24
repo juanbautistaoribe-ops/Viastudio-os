@@ -14,6 +14,7 @@ export default function CRMPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [showNew, setShowNew] = useState(false)
+  const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
@@ -28,6 +29,12 @@ export default function CRMPage() {
   }
 
   useEffect(() => { loadClients() }, [])
+
+  async function handleDelete(client: Client) {
+    if (!confirm(`¿Eliminar a ${client.company}? Esta acción no se puede deshacer.`)) return
+    await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
+    loadClients()
+  }
 
   const filtered = useMemo(() => {
     return clients.filter((c) => {
@@ -92,16 +99,30 @@ export default function CRMPage() {
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
             {filtered.map((client, i) => (
-              <ClientCard key={client.id} client={client} delay={i * 0.04} />
+              <ClientCard
+                key={client.id}
+                client={client}
+                delay={i * 0.04}
+                onEdit={setEditingClient}
+                onDelete={handleDelete}
+              />
             ))}
           </div>
         ) : (
           <ClientTable clients={filtered} />
         )}
       </main>
+
       <NewClientModal
         open={showNew}
         onClose={() => setShowNew(false)}
+        onCreated={loadClients}
+      />
+
+      <NewClientModal
+        open={!!editingClient}
+        client={editingClient}
+        onClose={() => setEditingClient(null)}
         onCreated={loadClients}
       />
     </div>

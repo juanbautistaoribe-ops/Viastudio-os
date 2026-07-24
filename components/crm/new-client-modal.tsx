@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Loader2 } from 'lucide-react'
+import type { Client } from '@/types'
 
 const SERVICES = [
   { value: 'SOCIAL_MEDIA', label: 'Social Media' },
@@ -16,19 +17,50 @@ const SERVICES = [
   { value: 'STRATEGY', label: 'Estrategia' },
 ]
 
+const STATUSES = [
+  { value: 'ACTIVE', label: 'Activo' },
+  { value: 'PROSPECT', label: 'Prospecto' },
+  { value: 'INACTIVE', label: 'Inactivo' },
+  { value: 'CHURNED', label: 'Perdido' },
+]
+
+const EMPTY_FORM = {
+  name: '', company: '', email: '', phone: '', website: '',
+  industry: '', country: '', monthlyValue: '', services: [] as string[], status: 'ACTIVE',
+}
+
 interface Props {
   open: boolean
   onClose: () => void
   onCreated: () => void
+  client?: Client | null
 }
 
-export function NewClientModal({ open, onClose, onCreated }: Props) {
+export function NewClientModal({ open, onClose, onCreated, client }: Props) {
+  const isEdit = !!client
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({
-    name: '', company: '', email: '', phone: '', website: '',
-    industry: '', country: '', monthlyValue: '', services: [] as string[],
-  })
+  const [form, setForm] = useState(EMPTY_FORM)
+
+  useEffect(() => {
+    if (open && client) {
+      setForm({
+        name: client.name,
+        company: client.company,
+        email: client.email,
+        phone: client.phone ?? '',
+        website: client.website ?? '',
+        industry: client.industry ?? '',
+        country: client.country ?? '',
+        monthlyValue: String(client.monthlyValue ?? ''),
+        services: client.services.map(s => (s as string).toUpperCase()),
+        status: (client.status as string).toUpperCase(),
+      })
+    } else if (!open) {
+      setForm(EMPTY_FORM)
+      setError('')
+    }
+  }, [open, client])
 
   function toggleService(val: string) {
     setForm(f => ({
@@ -42,21 +74,22 @@ export function NewClientModal({ open, onClose, onCreated }: Props) {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/clients', {
-        method: 'POST',
+      const url = isEdit ? `/api/clients/${client!.id}` : '/api/clients'
+      const method = isEdit ? 'PUT' : 'POST'
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
           monthlyValue: parseFloat(form.monthlyValue) || 0,
-          status: 'ACTIVE',
         }),
       })
-      if (!res.ok) throw new Error('Error al crear cliente')
-      setForm({ name: '', company: '', email: '', phone: '', website: '', industry: '', country: '', monthlyValue: '', services: [] })
+      if (!res.ok) throw new Error('Error al guardar cliente')
+      setForm(EMPTY_FORM)
       onCreated()
       onClose()
     } catch {
-      setError('No se pudo crear el cliente. Intentá de nuevo.')
+      setError('No se pudo guardar el cliente. Intentá de nuevo.')
     } finally {
       setLoading(false)
     }
@@ -81,7 +114,9 @@ export function NewClientModal({ open, onClose, onCreated }: Props) {
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}
           >
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Nuevo Cliente</h2>
+              <h2 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>
+                {isEdit ? 'Editar Cliente' : 'Nuevo Cliente'}
+              </h2>
               <button onClick={onClose} style={{ color: 'var(--color-text-muted)' }}><X size={18} /></button>
             </div>
 
@@ -130,9 +165,17 @@ export function NewClientModal({ open, onClose, onCreated }: Props) {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>Valor mensual (USD)</label>
-                <input type="number" min="0" value={form.monthlyValue} onChange={e => setForm(f => ({ ...f, monthlyValue: e.target.value }))} className="input-base text-sm" placeholder="0" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>Valor mensual (USD)</label>
+                  <input type="number" min="0" value={form.monthlyValue} onChange={e => setForm(f => ({ ...f, monthlyValue: e.target.value }))} className="input-base text-sm" placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>Estado</label>
+                  <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className="input-base text-sm">
+                    {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -160,7 +203,7 @@ export function NewClientModal({ open, onClose, onCreated }: Props) {
                   Cancelar
                 </button>
                 <button type="submit" disabled={loading} className="flex-1 py-2 rounded-lg text-sm font-semibold text-white flex items-center justify-center gap-2" style={{ background: 'var(--color-primary)' }}>
-                  {loading ? <Loader2 size={14} className="animate-spin" /> : 'Crear cliente'}
+                  {loading ? <Loader2 size={14} className="animate-spin" /> : isEdit ? 'Guardar cambios' : 'Crear cliente'}
                 </button>
               </div>
             </form>

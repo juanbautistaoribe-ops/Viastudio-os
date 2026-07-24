@@ -1,8 +1,9 @@
 'use client'
 
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Globe, Mail, ExternalLink, MoreHorizontal } from 'lucide-react'
+import { Globe, Mail, ExternalLink, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { Avatar } from '@/components/shared/avatar'
 import { formatCurrency, getStatusBadgeClass, getStatusLabel } from '@/lib/utils'
 import type { Client } from '@/types'
@@ -22,9 +23,25 @@ const SERVICE_LABELS: Record<string, string> = {
 interface ClientCardProps {
   client: Client
   delay?: number
+  onEdit?: (client: Client) => void
+  onDelete?: (client: Client) => void
 }
 
-export function ClientCard({ client, delay = 0 }: ClientCardProps) {
+export function ClientCard({ client, delay = 0, onEdit, onDelete }: ClientCardProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [menuOpen])
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -53,12 +70,40 @@ export function ClientCard({ client, delay = 0 }: ClientCardProps) {
           <span className={`badge ${getStatusBadgeClass(client.status)}`}>
             {getStatusLabel(client.status)}
           </span>
-          <button
-            className="w-6 h-6 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            <MoreHorizontal size={14} />
-          </button>
+
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={(e) => { e.preventDefault(); setMenuOpen(v => !v) }}
+              className="w-6 h-6 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              <MoreHorizontal size={14} />
+            </button>
+
+            {menuOpen && (
+              <div
+                className="absolute right-0 top-8 z-20 w-36 rounded-xl py-1 shadow-xl"
+                style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+              >
+                <button
+                  onClick={() => { setMenuOpen(false); onEdit?.(client) }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors hover:opacity-80"
+                  style={{ color: 'var(--color-text)' }}
+                >
+                  <Pencil size={12} />
+                  Editar
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); onDelete?.(client) }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors hover:opacity-80"
+                  style={{ color: 'var(--color-danger)' }}
+                >
+                  <Trash2 size={12} />
+                  Eliminar
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
