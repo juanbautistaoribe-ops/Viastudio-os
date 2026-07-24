@@ -43,8 +43,8 @@ export default function CRMPage() {
 
   const stats = useMemo(() => ({
     total: clients.length,
-    active: clients.filter(c => c.status === 'active' || c.status === 'ACTIVE').length,
-    prospects: clients.filter(c => c.status === 'prospect' || c.status === 'PROSPECT').length,
+    active: clients.filter(c => (c.status as string).toLowerCase() === 'active').length,
+    prospects: clients.filter(c => (c.status as string).toLowerCase() === 'prospect').length,
     mrr: clients.reduce((a, c) => a + (c.monthlyValue ?? 0), 0),
   }), [clients])
 
