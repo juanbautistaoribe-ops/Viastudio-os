@@ -1,0 +1,54 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { createClient } from '@/lib/supabase/server'
+
+export const maxDuration = 30
+
+export async function GET() {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const clients = await prisma.client.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { contacts: true },
+    })
+    return NextResponse.json(clients)
+  } catch (error) {
+    console.error(error)
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const body = await req.json()
+    const client = await prisma.client.create({
+      data: {
+        name: body.name,
+        company: body.company,
+        email: body.email,
+        phone: body.phone ?? null,
+        website: body.website ?? null,
+        status: body.status ?? 'ACTIVE',
+        services: body.services ?? [],
+        monthlyValue: body.monthlyValue ?? 0,
+        currency: body.currency ?? 'USD',
+        startDate: body.startDate ? new Date(body.startDate) : new Date(),
+        industry: body.industry ?? null,
+        country: body.country ?? null,
+        tags: body.tags ?? [],
+        notes: body.notes ?? null,
+      },
+    })
+    return NextResponse.json(client, { status: 201 })
+  } catch (error) {
+    console.error(error)
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+  }
+}

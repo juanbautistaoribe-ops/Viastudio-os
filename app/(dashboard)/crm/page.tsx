@@ -1,22 +1,31 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Header } from '@/components/layout/header'
 import { ClientCard } from '@/components/crm/client-card'
 import { ClientFilters } from '@/components/crm/client-filters'
 import { ClientTable } from '@/components/crm/client-table'
 import { EmptyState } from '@/components/shared/empty-state'
-import { MOCK_CLIENTS } from '@/lib/mock-data'
-import type { ClientStatus, ViewMode } from '@/types'
+import type { Client, ClientStatus, ViewMode } from '@/types'
 import { Users } from 'lucide-react'
 
 export default function CRMPage() {
+  const [clients, setClients] = useState<Client[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
 
+  useEffect(() => {
+    fetch('/api/clients')
+      .then(r => r.json())
+      .then(data => setClients(Array.isArray(data) ? data : []))
+      .catch(() => setClients([]))
+      .finally(() => setLoading(false))
+  }, [])
+
   const filtered = useMemo(() => {
-    return MOCK_CLIENTS.filter((c) => {
+    return clients.filter((c) => {
       const matchSearch =
         !search ||
         c.company.toLowerCase().includes(search.toLowerCase()) ||
@@ -25,35 +34,34 @@ export default function CRMPage() {
       const matchStatus = statusFilter === 'all' || c.status === statusFilter
       return matchSearch && matchStatus
     })
-  }, [search, statusFilter])
+  }, [clients, search, statusFilter])
+
+  const stats = useMemo(() => ({
+    total: clients.length,
+    active: clients.filter(c => c.status === 'active' || c.status === 'ACTIVE').length,
+    prospects: clients.filter(c => c.status === 'prospect' || c.status === 'PROSPECT').length,
+    mrr: clients.reduce((a, c) => a + (c.monthlyValue ?? 0), 0),
+  }), [clients])
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <Header />
 
       <main className="flex-1 overflow-y-auto p-6">
-        {/* Summary bar */}
         <div className="flex items-center gap-6 mb-5">
           {[
-            { label: 'Total', value: MOCK_CLIENTS.length, color: 'var(--color-text)' },
-            { label: 'Activos', value: MOCK_CLIENTS.filter(c => c.status === 'active').length, color: 'var(--color-success)' },
-            { label: 'Prospectos', value: MOCK_CLIENTS.filter(c => c.status === 'prospect').length, color: 'var(--color-info)' },
-            {
-              label: 'MRR',
-              value: `$${(MOCK_CLIENTS.reduce((a, c) => a + c.monthlyValue, 0) / 1000).toFixed(1)}k`,
-              color: 'var(--color-accent)',
-            },
+            { label: 'Total', value: stats.total, color: 'var(--color-text)' },
+            { label: 'Activos', value: stats.active, color: 'var(--color-success)' },
+            { label: 'Prospectos', value: stats.prospects, color: 'var(--color-info)' },
+            { label: 'MRR', value: `$${(stats.mrr / 1000).toFixed(1)}k`, color: 'var(--color-accent)' },
           ].map(({ label, value, color }) => (
             <div key={label}>
               <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
-              <p className="text-lg font-bold tabular-nums" style={{ color }}>
-                {value}
-              </p>
+              <p className="text-lg font-bold tabular-nums" style={{ color }}>{value}</p>
             </div>
           ))}
         </div>
 
-        {/* Filters */}
         <div className="mb-5">
           <ClientFilters
             search={search}
@@ -66,12 +74,15 @@ export default function CRMPage() {
           />
         </div>
 
-        {/* Content */}
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }} />
+          </div>
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon={Users}
-            title="No se encontraron clientes"
-            description="Intenta ajustar tu búsqueda o filtros."
+            title={clients.length === 0 ? 'Aún no hay clientes' : 'No se encontraron clientes'}
+            description={clients.length === 0 ? 'Agregá tu primer cliente para empezar.' : 'Intenta ajustar tu búsqueda o filtros.'}
           />
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
