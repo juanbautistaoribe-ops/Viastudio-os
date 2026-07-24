@@ -1,16 +1,14 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { PrismaClient } = require('@prisma/client')
-
-type PrismaClientType = InstanceType<typeof PrismaClient>
+import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClientType | undefined
+  prisma: PrismaClient | undefined
 }
 
-export const prisma: PrismaClientType =
+export const prisma: PrismaClient =
   globalForPrisma.prisma ??
   new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    datasourceUrl: process.env.DATABASE_URL,
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   })
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
