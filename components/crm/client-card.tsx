@@ -8,15 +8,15 @@ import { formatCurrency, getStatusBadgeClass, getStatusLabel } from '@/lib/utils
 import type { Client } from '@/types'
 
 const SERVICE_LABELS: Record<string, string> = {
-  social_media: 'Social',
-  paid_ads: 'Paid Ads',
-  seo: 'SEO',
-  content: 'Content',
-  email: 'Email',
-  branding: 'Branding',
-  web: 'Web',
-  consulting: 'Consulting',
-  strategy: 'Strategy',
+  social_media: 'Social', SOCIAL_MEDIA: 'Social',
+  paid_ads: 'Paid Ads', PAID_ADS: 'Paid Ads',
+  seo: 'SEO', SEO: 'SEO',
+  content: 'Contenido', CONTENT: 'Contenido',
+  email: 'Email', EMAIL: 'Email',
+  branding: 'Branding', BRANDING: 'Branding',
+  web: 'Web', WEB: 'Web',
+  consulting: 'Consultoría', CONSULTING: 'Consultoría',
+  strategy: 'Estrategia', STRATEGY: 'Estrategia',
 }
 
 interface ClientCardProps {

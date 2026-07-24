@@ -75,51 +75,48 @@ export function getGrowthPrefix(value: number): string {
   return value > 0 ? '+' : ''
 }
 
-const STATUS_COLORS = {
-  // Client
-  active: 'badge-success',
-  inactive: 'badge-muted',
-  prospect: 'badge-info',
-  churned: 'badge-danger',
-  // Task
-  backlog: 'badge-muted',
-  todo: 'badge-info',
-  in_progress: 'badge-primary',
-  review: 'badge-warning',
-  done: 'badge-success',
-  cancelled: 'badge-danger',
-  // Lead
-  new: 'badge-info',
-  contacted: 'badge-primary',
-  qualified: 'badge-warning',
-  proposal: 'badge-primary',
-  negotiation: 'badge-warning',
-  won: 'badge-success',
-  lost: 'badge-danger',
-} as const
+const STATUS_COLORS: Record<string, string> = {
+  active: 'badge-success', ACTIVE: 'badge-success',
+  inactive: 'badge-muted', INACTIVE: 'badge-muted',
+  prospect: 'badge-info', PROSPECT: 'badge-info',
+  churned: 'badge-danger', CHURNED: 'badge-danger',
+  backlog: 'badge-muted', BACKLOG: 'badge-muted',
+  todo: 'badge-info', TODO: 'badge-info',
+  in_progress: 'badge-primary', IN_PROGRESS: 'badge-primary',
+  review: 'badge-warning', REVIEW: 'badge-warning',
+  done: 'badge-success', DONE: 'badge-success',
+  cancelled: 'badge-danger', CANCELLED: 'badge-danger',
+  new: 'badge-info', NEW: 'badge-info',
+  contacted: 'badge-primary', CONTACTED: 'badge-primary',
+  qualified: 'badge-warning', QUALIFIED: 'badge-warning',
+  proposal: 'badge-primary', PROPOSAL: 'badge-primary',
+  negotiation: 'badge-warning', NEGOTIATION: 'badge-warning',
+  won: 'badge-success', WON: 'badge-success',
+  lost: 'badge-danger', LOST: 'badge-danger',
+}
 
 export function getStatusBadgeClass(status: string): string {
-  return STATUS_COLORS[status as keyof typeof STATUS_COLORS] ?? 'badge-muted'
+  return STATUS_COLORS[status] ?? 'badge-muted'
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  active: 'Activo',
-  inactive: 'Inactivo',
-  prospect: 'Prospecto',
-  churned: 'Perdido',
-  backlog: 'Backlog',
-  todo: 'Por hacer',
-  in_progress: 'En progreso',
-  review: 'En revisión',
-  done: 'Completado',
-  cancelled: 'Cancelado',
-  new: 'Nuevo',
-  contacted: 'Contactado',
-  qualified: 'Calificado',
-  proposal: 'Propuesta',
-  negotiation: 'Negociación',
-  won: 'Ganado',
-  lost: 'Perdido',
+  active: 'Activo', ACTIVE: 'Activo',
+  inactive: 'Inactivo', INACTIVE: 'Inactivo',
+  prospect: 'Prospecto', PROSPECT: 'Prospecto',
+  churned: 'Perdido', CHURNED: 'Perdido',
+  backlog: 'Backlog', BACKLOG: 'Backlog',
+  todo: 'Por hacer', TODO: 'Por hacer',
+  in_progress: 'En progreso', IN_PROGRESS: 'En progreso',
+  review: 'En revisión', REVIEW: 'En revisión',
+  done: 'Completado', DONE: 'Completado',
+  cancelled: 'Cancelado', CANCELLED: 'Cancelado',
+  new: 'Nuevo', NEW: 'Nuevo',
+  contacted: 'Contactado', CONTACTED: 'Contactado',
+  qualified: 'Calificado', QUALIFIED: 'Calificado',
+  proposal: 'Propuesta', PROPOSAL: 'Propuesta',
+  negotiation: 'Negociación', NEGOTIATION: 'Negociación',
+  won: 'Ganado', WON: 'Ganado',
+  lost: 'Perdido', LOST: 'Perdido',
 }
 
 export function getStatusLabel(status: string): string {
