@@ -231,6 +231,7 @@ export default function AIPage() {
 
   function useFunction(fn: typeof AI_FUNCTIONS[0]) {
     setActiveFn(fn.id)
+    setMessages([])
     setInput(fn.prompt)
     textareaRef.current?.focus()
   }
