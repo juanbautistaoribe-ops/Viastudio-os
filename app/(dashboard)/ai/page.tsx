@@ -132,14 +132,40 @@ function MessageContent({ content }: { content: string }) {
   )
 }
 
+const PLAN_UNICO_DESCRIPTION = '12 piezas/mes (carruseles, fotos e historias) + 3 reels con guión + 3 pautas en Meta + programación de contenido + medición y presentación de métricas'
+
+function buildClientContext(clients: any[]): string {
+  if (!clients.length) return ''
+  const lines = clients
+    .filter(c => (c.status as string).toLowerCase() === 'active')
+    .map(c => {
+      const services = (c.services as string[]).map(s => s.toLowerCase().replace(/_/g, ' ')).join(', ')
+      const plan = c.planType === 'unico'
+        ? `Plan Único (${PLAN_UNICO_DESCRIPTION})`
+        : c.planType === 'personalizado' && c.planNotes
+          ? `Plan Personalizado: ${c.planNotes}`
+          : 'Sin plan definido'
+      return `- ${c.company} | Servicios: ${services || 'sin definir'} | ${c.currency} $${c.monthlyValue}/mes | ${plan}`
+    })
+  if (!lines.length) return ''
+  return `Clientes activos de ViaStudio:\n${lines.join('\n')}`
+}
+
 export default function AIPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   const [activeFn, setActiveFn] = useState<AIFunction | null>(null)
+  const [clients, setClients] = useState<any[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    fetch('/api/clients').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setClients(data)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -169,12 +195,14 @@ export default function AIPage() {
     setMessages([...newMessages, assistantMsg])
 
     try {
+      const clientContext = buildClientContext(clients)
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           functionId: activeFn,
+          systemContext: clientContext || undefined,
         }),
       })
 

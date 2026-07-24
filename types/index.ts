@@ -44,6 +44,8 @@ export interface Client {
   country?: string
   tags: string[]
   notes?: string
+  planType?: 'unico' | 'personalizado' | null
+  planNotes?: string
   assignedTo?: string
   contacts: Contact[]
   createdAt: Date

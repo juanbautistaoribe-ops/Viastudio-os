@@ -57,6 +57,8 @@ model Client {
   country      String?
   tags         String[]
   notes        String?
+  planType     String?      @map("plan_type")
+  planNotes    String?      @map("plan_notes")
   assignedTo   String?      @map("assigned_to")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")

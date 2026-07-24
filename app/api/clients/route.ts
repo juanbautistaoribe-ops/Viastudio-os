@@ -44,6 +44,8 @@ export async function POST(req: NextRequest) {
         country: body.country ?? null,
         tags: body.tags ?? [],
         notes: body.notes ?? null,
+        planType: body.planType ?? null,
+        planNotes: body.planNotes ?? null,
       },
     })
     return NextResponse.json(client, { status: 201 })

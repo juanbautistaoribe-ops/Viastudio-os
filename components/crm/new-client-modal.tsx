@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, CheckCircle2 } from 'lucide-react'
 import type { Client } from '@/types'
 
 const SERVICES = [
@@ -24,9 +24,20 @@ const STATUSES = [
   { value: 'CHURNED', label: 'Perdido' },
 ]
 
+const PLAN_UNICO_ITEMS = [
+  '12 piezas/mes (carruseles, fotos e historias)',
+  '3 reels con guión',
+  '3 pautas en Meta',
+  'Programación de contenido',
+  'Medición y presentación de métricas',
+]
+
 const EMPTY_FORM = {
   name: '', company: '', email: '', phone: '', website: '',
-  industry: '', country: '', monthlyValue: '', currency: 'ARS', services: [] as string[], status: 'ACTIVE',
+  industry: '', country: '', monthlyValue: '', currency: 'ARS',
+  services: [] as string[], status: 'ACTIVE',
+  planType: '' as '' | 'unico' | 'personalizado',
+  planNotes: '',
 }
 
 interface Props {
@@ -56,6 +67,8 @@ export function NewClientModal({ open, onClose, onCreated, client }: Props) {
         currency: client.currency ?? 'ARS',
         services: client.services.map(s => (s as string).toUpperCase()),
         status: (client.status as string).toUpperCase(),
+        planType: (client.planType as '' | 'unico' | 'personalizado') ?? '',
+        planNotes: client.planNotes ?? '',
       })
     } else if (!open) {
       setForm(EMPTY_FORM)
@@ -83,6 +96,8 @@ export function NewClientModal({ open, onClose, onCreated, client }: Props) {
         body: JSON.stringify({
           ...form,
           monthlyValue: parseFloat(form.monthlyValue) || 0,
+          planType: form.planType || null,
+          planNotes: form.planNotes || null,
         }),
       })
       if (!res.ok) throw new Error('Error al guardar cliente')
@@ -183,6 +198,52 @@ export function NewClientModal({ open, onClose, onCreated, client }: Props) {
                     {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
                 </div>
+              </div>
+
+              {/* Plan */}
+              <div>
+                <label className="block text-xs font-medium mb-2" style={{ color: 'var(--color-text-2)' }}>Plan</label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {[
+                    { value: 'unico', label: 'Plan Único' },
+                    { value: 'personalizado', label: 'Personalizado' },
+                  ].map(p => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, planType: p.value as 'unico' | 'personalizado' }))}
+                      className="py-2 px-3 rounded-lg text-xs font-medium transition-all text-left"
+                      style={form.planType === p.value
+                        ? { background: 'var(--color-primary)', color: 'white' }
+                        : { background: 'var(--color-surface-2)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border-subtle)' }
+                      }
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                {form.planType === 'unico' && (
+                  <div className="rounded-xl p-3 space-y-1.5" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border-subtle)' }}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-muted)' }}>Incluye por mes</p>
+                    {PLAN_UNICO_ITEMS.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <CheckCircle2 size={12} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
+                        <span className="text-xs" style={{ color: 'var(--color-text-2)' }}>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {form.planType === 'personalizado' && (
+                  <textarea
+                    className="input-base text-sm w-full resize-none"
+                    rows={3}
+                    placeholder="Ej: 8 piezas/mes, 5 reels, 2 pautas, sin métricas…"
+                    value={form.planNotes}
+                    onChange={e => setForm(f => ({ ...f, planNotes: e.target.value }))}
+                  />
+                )}
               </div>
 
               <div>
