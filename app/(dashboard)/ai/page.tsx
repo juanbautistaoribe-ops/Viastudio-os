@@ -174,6 +174,7 @@ export default function AIPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+          functionId: activeFn,
         }),
       })
 
