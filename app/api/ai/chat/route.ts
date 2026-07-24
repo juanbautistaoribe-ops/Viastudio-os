@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
 
+export const maxDuration = 60
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
@@ -27,7 +29,7 @@ export async function POST(req: NextRequest) {
       ? `${SYSTEM_PROMPT}\n\nAdditional context:\n${systemContext}`
       : SYSTEM_PROMPT
 
-    const stream = await anthropic.messages.stream({
+    const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system,
@@ -37,25 +39,11 @@ export async function POST(req: NextRequest) {
       })),
     })
 
-    const encoder = new TextEncoder()
-    const readable = new ReadableStream({
-      async start(controller) {
-        for await (const chunk of stream) {
-          if (
-            chunk.type === 'content_block_delta' &&
-            chunk.delta.type === 'text_delta'
-          ) {
-            controller.enqueue(encoder.encode(chunk.delta.text))
-          }
-        }
-        controller.close()
-      },
-    })
+    const text = response.content[0].type === 'text' ? response.content[0].text : ''
 
-    return new Response(readable, {
+    return new Response(text, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'Transfer-Encoding': 'chunked',
         'Cache-Control': 'no-cache',
       },
     })
