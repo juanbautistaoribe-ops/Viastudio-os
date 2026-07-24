@@ -152,36 +152,81 @@ function buildClientContext(clients: any[]): string {
 }
 
 export default function AIPage() {
-  // historial separado por función — se mantiene mientras la página esté montada
-  const [conversations, setConversations] = useState<Record<string, Message[]>>({})
+  const [messages, setMessagesState] = useState<Record<string, Message[]>>({})
+  const [convIds, setConvIds] = useState<Record<string, string>>({}) // functionId → DB conversation id
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   const [activeFn, setActiveFn] = useState<AIFunction | null>(null)
   const [clients, setClients] = useState<any[]>([])
+  const [dbLoaded, setDbLoaded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const messages = activeFn ? (conversations[activeFn] ?? []) : []
+  const currentMessages = activeFn ? (messages[activeFn] ?? []) : []
 
-  function setMessages(updater: Message[] | ((prev: Message[]) => Message[])) {
-    if (!activeFn) return
-    setConversations(prev => {
-      const current = prev[activeFn] ?? []
+  function setMessages(fnId: string, updater: Message[] | ((prev: Message[]) => Message[])) {
+    setMessagesState(prev => {
+      const current = prev[fnId] ?? []
       const next = typeof updater === 'function' ? updater(current) : updater
-      return { ...prev, [activeFn]: next }
+      return { ...prev, [fnId]: next }
     })
   }
 
+  // Carga historial desde DB al montar
   useEffect(() => {
-    fetch('/api/clients').then(r => r.json()).then(data => {
-      if (Array.isArray(data)) setClients(data)
-    }).catch(() => {})
+    Promise.all([
+      fetch('/api/clients').then(r => r.json()).catch(() => []),
+      fetch('/api/ai/conversations').then(r => r.json()).catch(() => []),
+    ]).then(([clientData, convData]) => {
+      if (Array.isArray(clientData)) setClients(clientData)
+      if (Array.isArray(convData)) {
+        const msgMap: Record<string, Message[]> = {}
+        const idMap: Record<string, string> = {}
+        // Toma la conversación más reciente por función
+        for (const conv of convData) {
+          const fnKey = conv.function.toLowerCase() as string
+          if (!msgMap[fnKey]) {
+            idMap[fnKey] = conv.id
+            msgMap[fnKey] = (conv.messages ?? []).map((m: any) => ({
+              id: m.id,
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+              createdAt: new Date(m.createdAt),
+            }))
+          }
+        }
+        setMessagesState(msgMap)
+        setConvIds(idMap)
+      }
+      setDbLoaded(true)
+    })
   }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [currentMessages])
+
+  async function saveMessage(fnId: string, role: string, content: string): Promise<string | null> {
+    let convId = convIds[fnId]
+    if (!convId) {
+      const res = await fetch('/api/ai/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ functionId: fnId, title: AI_FUNCTIONS.find(f => f.id === fnId)?.label ?? fnId }),
+      })
+      if (!res.ok) return null
+      const conv = await res.json()
+      convId = conv.id
+      setConvIds(prev => ({ ...prev, [fnId]: convId }))
+    }
+    await fetch(`/api/ai/conversations/${convId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, content }),
+    })
+    return convId
+  }
 
   async function sendMessage(content: string) {
     if (!content.trim() || loading || !activeFn) return
@@ -193,8 +238,8 @@ export default function AIPage() {
       createdAt: new Date(),
     }
 
-    const newMessages = [...messages, userMsg]
-    setMessages(newMessages)
+    const newMessages = [...currentMessages, userMsg]
+    setMessages(activeFn, newMessages)
     setInput('')
     setLoading(true)
 
@@ -204,7 +249,11 @@ export default function AIPage() {
       content: '',
       createdAt: new Date(),
     }
-    setMessages([...newMessages, assistantMsg])
+    setMessages(activeFn, [...newMessages, assistantMsg])
+
+    // Guarda el mensaje del usuario en DB (crea la conversación si no existe)
+    const fnId = activeFn
+    saveMessage(fnId, 'user', userMsg.content)
 
     try {
       const clientContext = buildClientContext(clients)
@@ -230,15 +279,18 @@ export default function AIPage() {
           if (done) break
           const chunk = decoder.decode(value)
           fullContent += chunk
-          setMessages((prev) => {
+          setMessages(fnId, (prev) => {
             const updated = [...prev]
             updated[updated.length - 1] = { ...assistantMsg, content: fullContent }
             return updated
           })
         }
       }
-    } catch (error) {
-      setMessages((prev) => {
+
+      // Guarda respuesta del asistente en DB
+      if (fullContent) saveMessage(fnId, 'assistant', fullContent)
+    } catch {
+      setMessages(fnId, (prev) => {
         const updated = [...prev]
         updated[updated.length - 1] = {
           ...assistantMsg,
@@ -264,17 +316,17 @@ export default function AIPage() {
     setTimeout(() => setCopied(null), 2000)
   }
 
-  function newConversation() {
-    if (activeFn) {
-      setConversations(prev => ({ ...prev, [activeFn]: [] }))
-    }
+  async function newConversation() {
+    if (!activeFn) return
+    // Borra la conversación actual en DB y crea una nueva al mandar el próximo mensaje
+    setMessages(activeFn, [])
+    setConvIds(prev => { const n = { ...prev }; delete n[activeFn]; return n })
     setInput('')
   }
 
   function useFunction(fn: typeof AI_FUNCTIONS[0]) {
     setActiveFn(fn.id)
-    // solo pre-llena el input si el agente no tiene historial todavía
-    const hasHistory = (conversations[fn.id] ?? []).length > 0
+    const hasHistory = (messages[fn.id] ?? []).length > 0
     if (!hasHistory) setInput(fn.prompt)
     else setInput('')
     textareaRef.current?.focus()
@@ -381,7 +433,7 @@ export default function AIPage() {
               Impulsado por Claude · ViaStudio OS
             </p>
           </div>
-          {messages.length > 0 && (
+          {currentMessages.length > 0 && (
             <button
               onClick={newConversation}
               className="text-xs px-2 py-1 rounded-lg"
@@ -394,11 +446,11 @@ export default function AIPage() {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-5">
-          {messages.length === 0 ? (
+          {currentMessages.length === 0 ? (
             <WelcomeScreen onSelect={(fn) => useFunction(fn)} />
           ) : (
             <div className="max-w-3xl mx-auto space-y-4">
-              {messages.map((msg) => (
+              {currentMessages.map((msg) => (
                 <motion.div
                   key={msg.id}
                   initial={{ opacity: 0, y: 8 }}
