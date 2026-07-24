@@ -26,7 +26,7 @@ const STATUSES = [
 
 const EMPTY_FORM = {
   name: '', company: '', email: '', phone: '', website: '',
-  industry: '', country: '', monthlyValue: '', services: [] as string[], status: 'ACTIVE',
+  industry: '', country: '', monthlyValue: '', currency: 'ARS', services: [] as string[], status: 'ACTIVE',
 }
 
 interface Props {
@@ -53,6 +53,7 @@ export function NewClientModal({ open, onClose, onCreated, client }: Props) {
         industry: client.industry ?? '',
         country: client.country ?? '',
         monthlyValue: String(client.monthlyValue ?? ''),
+        currency: client.currency ?? 'ARS',
         services: client.services.map(s => (s as string).toUpperCase()),
         status: (client.status as string).toUpperCase(),
       })
@@ -167,8 +168,14 @@ export function NewClientModal({ open, onClose, onCreated, client }: Props) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>Valor mensual (USD)</label>
-                  <input type="number" min="0" value={form.monthlyValue} onChange={e => setForm(f => ({ ...f, monthlyValue: e.target.value }))} className="input-base text-sm" placeholder="0" />
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>Valor mensual</label>
+                  <div className="flex gap-2">
+                    <select value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))} className="input-base text-sm w-24 shrink-0">
+                      <option value="ARS">$ ARS</option>
+                      <option value="USD">US$ USD</option>
+                    </select>
+                    <input type="number" min="0" value={form.monthlyValue} onChange={e => setForm(f => ({ ...f, monthlyValue: e.target.value }))} className="input-base text-sm flex-1" placeholder="0" />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>Estado</label>

@@ -4,6 +4,8 @@ export const MOCK_STATS: DashboardStats = {
   activeClients: 12,
   activeClientsGrowth: 8,
   monthlyRevenue: 24500,
+  monthlyRevenueARS: 24500,
+  monthlyRevenueUSD: 0,
   monthlyRevenueGrowth: 12,
   pendingTasks: 34,
   criticalTasks: 3,

@@ -126,7 +126,7 @@ export function ClientCard({ client, delay = 0, onEdit, onDelete }: ClientCardPr
       >
         <div>
           <p className="text-xs font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
-            {formatCurrency(client.monthlyValue)}
+            {formatCurrency(client.monthlyValue, client.currency ?? 'ARS')}
           </p>
           <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
             /mes

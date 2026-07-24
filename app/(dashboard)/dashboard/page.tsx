@@ -14,6 +14,8 @@ const EMPTY_STATS: DashboardStats = {
   activeClients: 0,
   activeClientsGrowth: 0,
   monthlyRevenue: 0,
+  monthlyRevenueARS: 0,
+  monthlyRevenueUSD: 0,
   monthlyRevenueGrowth: 0,
   pendingTasks: 0,
   criticalTasks: 0,

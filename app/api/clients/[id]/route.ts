@@ -42,6 +42,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         ...(body.status && { status: body.status }),
         ...(body.services && { services: body.services }),
         ...(body.monthlyValue !== undefined && { monthlyValue: body.monthlyValue }),
+        ...(body.currency && { currency: body.currency }),
         industry: body.industry ?? undefined,
         country: body.country ?? undefined,
         ...(body.tags && { tags: body.tags }),

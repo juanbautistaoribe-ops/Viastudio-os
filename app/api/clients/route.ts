@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
         status: body.status ?? 'ACTIVE',
         services: body.services ?? [],
         monthlyValue: body.monthlyValue ?? 0,
-        currency: body.currency ?? 'USD',
+        currency: body.currency ?? 'ARS',
         startDate: body.startDate ? new Date(body.startDate) : new Date(),
         industry: body.industry ?? null,
         country: body.country ?? null,

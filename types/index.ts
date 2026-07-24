@@ -248,6 +248,8 @@ export interface DashboardStats {
   activeClients: number
   activeClientsGrowth: number
   monthlyRevenue: number
+  monthlyRevenueARS: number
+  monthlyRevenueUSD: number
   monthlyRevenueGrowth: number
   pendingTasks: number
   criticalTasks: number

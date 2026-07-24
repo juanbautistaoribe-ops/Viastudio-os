@@ -54,12 +54,16 @@ export async function GET() {
   const tasksCompletedThisWeek = tasks.filter(t => t.status === 'DONE' && t.updatedAt >= startOfWeek)
   const activeLeads = leads.filter(l => !['WON', 'LOST'].includes(l.status))
   const leadsValue = activeLeads.reduce((a, l) => a + l.potentialValue, 0)
-  const monthlyRevenue = activeClients.reduce((a, c) => a + c.monthlyValue, 0)
+  const monthlyRevenueARS = activeClients.filter(c => c.currency === 'ARS').reduce((a, c) => a + c.monthlyValue, 0)
+  const monthlyRevenueUSD = activeClients.filter(c => c.currency === 'USD').reduce((a, c) => a + c.monthlyValue, 0)
+  const monthlyRevenue = monthlyRevenueARS + monthlyRevenueUSD
 
   const stats = {
     activeClients: activeClients.length,
     activeClientsGrowth: 0,
     monthlyRevenue,
+    monthlyRevenueARS,
+    monthlyRevenueUSD,
     monthlyRevenueGrowth: 0,
     pendingTasks: pendingTasks.length,
     criticalTasks: criticalTasks.length,
