@@ -152,7 +152,8 @@ function buildClientContext(clients: any[]): string {
 }
 
 export default function AIPage() {
-  const [messages, setMessages] = useState<Message[]>([])
+  // historial separado por función — se mantiene mientras la página esté montada
+  const [conversations, setConversations] = useState<Record<string, Message[]>>({})
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
@@ -160,6 +161,17 @@ export default function AIPage() {
   const [clients, setClients] = useState<any[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const messages = activeFn ? (conversations[activeFn] ?? []) : []
+
+  function setMessages(updater: Message[] | ((prev: Message[]) => Message[])) {
+    if (!activeFn) return
+    setConversations(prev => {
+      const current = prev[activeFn] ?? []
+      const next = typeof updater === 'function' ? updater(current) : updater
+      return { ...prev, [activeFn]: next }
+    })
+  }
 
   useEffect(() => {
     fetch('/api/clients').then(r => r.json()).then(data => {
@@ -172,7 +184,7 @@ export default function AIPage() {
   }, [messages])
 
   async function sendMessage(content: string) {
-    if (!content.trim() || loading) return
+    if (!content.trim() || loading || !activeFn) return
 
     const userMsg: Message = {
       id: Math.random().toString(36).slice(2),
@@ -253,15 +265,18 @@ export default function AIPage() {
   }
 
   function newConversation() {
-    setMessages([])
-    setActiveFn(null)
+    if (activeFn) {
+      setConversations(prev => ({ ...prev, [activeFn]: [] }))
+    }
     setInput('')
   }
 
   function useFunction(fn: typeof AI_FUNCTIONS[0]) {
     setActiveFn(fn.id)
-    setMessages([])
-    setInput(fn.prompt)
+    // solo pre-llena el input si el agente no tiene historial todavía
+    const hasHistory = (conversations[fn.id] ?? []).length > 0
+    if (!hasHistory) setInput(fn.prompt)
+    else setInput('')
     textareaRef.current?.focus()
   }
 
