@@ -14,6 +14,7 @@ export async function GET() {
     return NextResponse.json({
       email: user.email ?? '',
       name: profile?.name ?? user.user_metadata?.full_name ?? '',
+      avatar: profile?.avatar ?? null,
     })
   } catch (error) {
     console.error(error)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Header } from '@/components/layout/header'
 import { Avatar } from '@/components/shared/avatar'
@@ -138,15 +138,39 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean
 function ProfileSettings({ onSave, saved, saveError }: { onSave: (name: string) => void; saved: boolean; saveError: string }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [avatar, setAvatar] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetch('/api/settings/profile')
       .then(r => r.json())
-      .then(data => { setName(data.name ?? ''); setEmail(data.email ?? '') })
+      .then(data => { setName(data.name ?? ''); setEmail(data.email ?? ''); setAvatar(data.avatar ?? null) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setUploadError('')
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/settings/avatar', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Error al subir')
+      setAvatar(data.url)
+    } catch (err: any) {
+      setUploadError(err.message ?? 'Error al subir la foto')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
 
   return (
     <div>
@@ -154,13 +178,27 @@ function ProfileSettings({ onSave, saved, saveError }: { onSave: (name: string) 
 
       <SettingSection title="Avatar">
         <div className="flex items-center gap-4">
-          <Avatar name={name || 'U'} size="lg" />
-          <button
-            className="px-3 py-1.5 rounded-lg text-xs font-medium"
-            style={{ background: 'var(--color-surface-3)', color: 'var(--color-text-2)' }}
-          >
-            Cambiar foto
-          </button>
+          <div className="relative">
+            <Avatar name={name || 'U'} src={avatar ?? undefined} size="lg" />
+            {uploading && (
+              <div className="absolute inset-0 rounded-full flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+                <Loader2 size={16} className="animate-spin text-white" />
+              </div>
+            )}
+          </div>
+          <div>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+              style={{ background: 'var(--color-surface-3)', color: 'var(--color-text-2)' }}
+            >
+              {uploading ? 'Subiendo…' : 'Cambiar foto'}
+            </button>
+            <p className="text-[10px] mt-1.5" style={{ color: 'var(--color-text-muted)' }}>JPG, PNG o WebP · Máx 5MB</p>
+            {uploadError && <p className="text-[10px] mt-1 text-red-400">{uploadError}</p>}
+          </div>
         </div>
       </SettingSection>
 

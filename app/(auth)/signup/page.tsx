@@ -74,10 +74,9 @@ export default function SignupPage() {
     >
       <div className="flex items-center justify-center gap-2.5 mb-8">
         <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{ background: 'linear-gradient(135deg, #6F2BFA 0%, #3300A6 100%)' }}
+          className="w-9 h-9 rounded-xl overflow-hidden"
         >
-          <Zap size={18} color="white" strokeWidth={2.5} />
+          <img src="/via-logo.svg" alt="ViaStudio" className="w-full h-full object-cover" />
         </div>
         <span className="text-lg font-bold tracking-tight" style={{ color: 'var(--color-text)' }}>
           ViaStudio OS

@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -14,14 +15,13 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Zap,
-  Bell,
   Search,
   Command,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/store/ui'
 import { useAuthStore } from '@/store/auth'
+import { Avatar } from '@/components/shared/avatar'
 import { initials, generateAvatarColor } from '@/lib/utils'
 
 const NAV_ITEMS = [
@@ -41,10 +41,19 @@ const BOTTOM_ITEMS = [
 export function Sidebar() {
   const pathname = usePathname()
   const { sidebarCollapsed, toggleSidebar, setCommandOpen } = useUIStore()
-  const { profile } = useAuthStore()
+  const { profile, setProfile } = useAuthStore()
 
   const name = profile?.name ?? 'User'
-  const avatarBg = generateAvatarColor(name)
+
+  useEffect(() => {
+    if (profile) return
+    fetch('/api/settings/profile')
+      .then(r => r.json())
+      .then(data => {
+        if (data.name) setProfile({ id: '', name: data.name, email: data.email ?? '', avatar: data.avatar, role: 'MEMBER' })
+      })
+      .catch(() => {})
+  }, [])
 
   return (
     <div className="relative flex-shrink-0">
@@ -63,12 +72,11 @@ export function Sidebar() {
         style={{ borderBottom: '1px solid var(--color-border-subtle)' }}
       >
         <div className="flex items-center gap-2.5 min-w-0">
-          <div
-            className="logo-glow flex items-center justify-center w-7 h-7 rounded-lg shrink-0"
-            style={{ background: 'linear-gradient(135deg, #6F2BFA 0%, #3300A6 100%)' }}
-          >
-            <Zap size={14} color="white" strokeWidth={2.5} />
-          </div>
+          <img
+            src="/via-logo.svg"
+            alt="ViaStudio"
+            className="logo-glow w-7 h-7 rounded-lg shrink-0 object-cover"
+          />
           <AnimatePresence initial={false}>
             {!sidebarCollapsed && (
               <motion.span
@@ -197,12 +205,7 @@ export function Sidebar() {
           style={{ color: 'var(--color-text-2)' }}
           title={sidebarCollapsed ? name : undefined}
         >
-          <div
-            className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-            style={{ background: avatarBg }}
-          >
-            {initials(name)}
-          </div>
+          <Avatar name={name} src={profile?.avatar ?? undefined} size="xs" className="shrink-0" />
           <AnimatePresence initial={false}>
             {!sidebarCollapsed && (
               <motion.div
