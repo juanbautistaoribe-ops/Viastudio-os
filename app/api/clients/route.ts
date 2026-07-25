@@ -15,7 +15,12 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
       include: { contacts: true },
     })
-    return NextResponse.json(clients)
+    const normalized = clients.map(c => ({
+      ...c,
+      status: c.status.toLowerCase(),
+      services: c.services.map(s => s.toLowerCase()),
+    }))
+    return NextResponse.json(normalized)
   } catch (error) {
     console.error(error)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
