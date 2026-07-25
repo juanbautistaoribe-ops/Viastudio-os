@@ -88,7 +88,7 @@ export function ClientTable({ clients }: ClientTableProps) {
                 </div>
               </td>
               <td className="px-4 py-3 font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
-                {formatCurrency(client.monthlyValue)}
+                {formatCurrency(client.monthlyValue, client.currency ?? 'ARS')}
               </td>
               <td className="px-4 py-3" style={{ color: 'var(--color-text-muted)' }}>
                 {formatDate(client.startDate)}
