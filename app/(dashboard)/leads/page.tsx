@@ -16,6 +16,7 @@ const PIPELINE_STAGES: { id: LeadStatus; label: string; color: string }[] = [
   { id: 'proposal',    label: 'Propuesta',    color: '#6F2BFA' },
   { id: 'negotiation', label: 'Negociación',  color: '#EC4899' },
   { id: 'won',         label: 'Ganado',       color: '#22C55E' },
+  { id: 'lost',        label: 'Perdido',      color: '#6B7280' },
 ]
 
 const SOURCE_LABELS: Record<string, string> = {

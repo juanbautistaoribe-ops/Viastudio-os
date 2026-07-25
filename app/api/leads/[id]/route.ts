@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
+import { logActivity } from '@/lib/activity'
 
 export const maxDuration = 30
 
@@ -42,6 +43,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     })
 
+    if (body.status === 'won') logActivity('LEAD_WON', `Lead ganado: ${lead.company}`, user.id, { entityId: lead.id, entityType: 'lead' })
+    if (body.status === 'lost') logActivity('LEAD_LOST', `Lead perdido: ${lead.company}`, user.id, { entityId: lead.id, entityType: 'lead' })
     return NextResponse.json(normalizeLead(lead))
   } catch (error) {
     console.error(error)

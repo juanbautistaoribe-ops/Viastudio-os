@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
+import { logActivity } from '@/lib/activity'
 
 export const maxDuration = 30
 
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    logActivity('DOC_CREATED', `Documento creado: ${doc.title}`, user.id, { entityId: doc.id, entityType: 'document' })
     return NextResponse.json(normalizeDoc(doc), { status: 201 })
   } catch (error) {
     console.error(error)

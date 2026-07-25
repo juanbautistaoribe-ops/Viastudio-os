@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Header } from '@/components/layout/header'
 import { Avatar } from '@/components/shared/avatar'
 import {
   User, Shield, Palette, Plug, Bell, Key,
-  ChevronRight, Check, Zap, ExternalLink
+  ChevronRight, Check, Zap, ExternalLink, Loader2
 } from 'lucide-react'
 
 const SETTINGS_SECTIONS = [
@@ -30,10 +30,22 @@ const INTEGRATIONS = [
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState('profile')
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
-  function handleSave() {
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+  async function handleSave(name: string) {
+    setSaveError('')
+    try {
+      const res = await fetch('/api/settings/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      if (!res.ok) throw new Error()
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch {
+      setSaveError('Error al guardar. Intentá de nuevo.')
+    }
   }
 
   return (
@@ -72,7 +84,7 @@ export default function SettingsPage() {
             transition={{ duration: 0.2 }}
             className="max-w-2xl"
           >
-            {activeSection === 'profile' && <ProfileSettings onSave={handleSave} saved={saved} />}
+            {activeSection === 'profile' && <ProfileSettings onSave={handleSave} saved={saved} saveError={saveError} />}
             {activeSection === 'integrations' && <IntegrationsSettings />}
             {activeSection === 'appearance' && <AppearanceSettings />}
             {activeSection === 'notifications' && <NotificationsSettings />}
@@ -123,14 +135,26 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean
   )
 }
 
-function ProfileSettings({ onSave, saved }: { onSave: () => void; saved: boolean }) {
+function ProfileSettings({ onSave, saved, saveError }: { onSave: (name: string) => void; saved: boolean; saveError: string }) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/settings/profile')
+      .then(r => r.json())
+      .then(data => { setName(data.name ?? ''); setEmail(data.email ?? '') })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
   return (
     <div>
       <h2 className="text-base font-bold mb-6" style={{ color: 'var(--color-text)' }}>Perfil</h2>
 
       <SettingSection title="Avatar">
         <div className="flex items-center gap-4">
-          <Avatar name="Juan Bautista" size="lg" />
+          <Avatar name={name || 'U'} size="lg" />
           <button
             className="px-3 py-1.5 rounded-lg text-xs font-medium"
             style={{ background: 'var(--color-surface-3)', color: 'var(--color-text-2)' }}
@@ -141,28 +165,30 @@ function ProfileSettings({ onSave, saved }: { onSave: () => void; saved: boolean
       </SettingSection>
 
       <SettingSection title="Información personal">
-        <div className="space-y-3">
-          {[
-            { label: 'Nombre completo', placeholder: 'Tu nombre', defaultValue: 'Juan Bautista' },
-            { label: 'Email', placeholder: 'tu@viastudio.com', defaultValue: 'juan@viastudio.com', type: 'email' },
-            { label: 'Rol', placeholder: 'Tu rol', defaultValue: 'Founder & CEO' },
-          ].map(({ label, placeholder, defaultValue, type }) => (
-            <div key={label}>
-              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>{label}</label>
-              <input
-                type={type ?? 'text'}
-                className="input-base text-xs"
-                placeholder={placeholder}
-                defaultValue={defaultValue}
-              />
+        {loading ? (
+          <div className="flex items-center gap-2 py-4" style={{ color: 'var(--color-text-muted)' }}>
+            <Loader2 size={14} className="animate-spin" /> Cargando…
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>Nombre completo</label>
+              <input type="text" className="input-base text-xs" placeholder="Tu nombre" value={name} onChange={e => setName(e.target.value)} />
             </div>
-          ))}
-        </div>
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>Email</label>
+              <input type="email" className="input-base text-xs opacity-60" value={email} disabled />
+            </div>
+          </div>
+        )}
       </SettingSection>
 
+      {saveError && <p className="text-xs text-red-400 mb-3">{saveError}</p>}
+
       <button
-        onClick={onSave}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all"
+        onClick={() => onSave(name)}
+        disabled={loading}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-50"
         style={{ background: 'var(--color-primary)' }}
       >
         {saved ? <><Check size={14} /> ¡Guardado!</> : 'Guardar cambios'}

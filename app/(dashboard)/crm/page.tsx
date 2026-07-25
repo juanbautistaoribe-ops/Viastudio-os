@@ -7,6 +7,7 @@ import { ClientFilters } from '@/components/crm/client-filters'
 import { ClientTable } from '@/components/crm/client-table'
 import { EmptyState } from '@/components/shared/empty-state'
 import { NewClientModal } from '@/components/crm/new-client-modal'
+import { ContactsPanel } from '@/components/crm/contacts-panel'
 import type { Client, ClientStatus, ViewMode } from '@/types'
 import { Users } from 'lucide-react'
 
@@ -15,6 +16,7 @@ export default function CRMPage() {
   const [loading, setLoading] = useState(true)
   const [showNew, setShowNew] = useState(false)
   const [editingClient, setEditingClient] = useState<Client | null>(null)
+  const [contactsClient, setContactsClient] = useState<Client | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
@@ -105,6 +107,7 @@ export default function CRMPage() {
                 delay={i * 0.04}
                 onEdit={setEditingClient}
                 onDelete={handleDelete}
+                onContacts={setContactsClient}
               />
             ))}
           </div>
@@ -125,6 +128,8 @@ export default function CRMPage() {
         onClose={() => setEditingClient(null)}
         onCreated={loadClients}
       />
+
+      <ContactsPanel client={contactsClient} onClose={() => setContactsClient(null)} />
     </div>
   )
 }

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Globe, Mail, ExternalLink, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { Globe, Mail, ExternalLink, MoreHorizontal, Pencil, Trash2, Users } from 'lucide-react'
 import { Avatar } from '@/components/shared/avatar'
 import { formatCurrency, getStatusBadgeClass, getStatusLabel } from '@/lib/utils'
 import type { Client } from '@/types'
@@ -25,9 +25,10 @@ interface ClientCardProps {
   delay?: number
   onEdit?: (client: Client) => void
   onDelete?: (client: Client) => void
+  onContacts?: (client: Client) => void
 }
 
-export function ClientCard({ client, delay = 0, onEdit, onDelete }: ClientCardProps) {
+export function ClientCard({ client, delay = 0, onEdit, onDelete, onContacts }: ClientCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -85,6 +86,14 @@ export function ClientCard({ client, delay = 0, onEdit, onDelete }: ClientCardPr
                 className="absolute right-0 top-8 z-20 w-36 rounded-xl py-1 shadow-xl"
                 style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
               >
+                <button
+                  onClick={() => { setMenuOpen(false); onContacts?.(client) }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors hover:opacity-80"
+                  style={{ color: 'var(--color-text)' }}
+                >
+                  <Users size={12} />
+                  Contactos
+                </button>
                 <button
                   onClick={() => { setMenuOpen(false); onEdit?.(client) }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition-colors hover:opacity-80"

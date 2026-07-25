@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
+import { logActivity } from '@/lib/activity'
 
 export const maxDuration = 30
 
@@ -59,6 +60,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       client: { select: { id: true, name: true, company: true, avatar: true } },
     },
   })
+  if (body.status?.toUpperCase() === 'DONE') {
+    logActivity('TASK_COMPLETED', `Tarea completada: ${task.title}`, user.id, { entityId: task.id, entityType: 'task' })
+  }
   return NextResponse.json(normalizeTask(task))
 }
 

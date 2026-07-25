@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
+import { logActivity } from '@/lib/activity'
 
 export const maxDuration = 30
 
@@ -69,5 +70,6 @@ export async function POST(req: NextRequest) {
     },
   })
 
+  logActivity('TASK_CREATED', `Tarea creada: ${task.title}`, user.id, { entityId: task.id, entityType: 'task', clientId: task.clientId ?? undefined })
   return NextResponse.json(normalizeTask(task), { status: 201 })
 }
