@@ -1,25 +1,42 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, RefreshCw, ArrowRight } from 'lucide-react'
+import { Sparkles, RefreshCw, ArrowRight, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 
-const WEEKLY_SUMMARY = `**This week at ViaStudio:**
-
-- 🟢 **18 tasks completed** — ahead of last week's pace (+22%)
-- 💰 **$3,200 received** from Bloom Skincare (May invoice)
-- 🚨 **3 critical tasks** need attention this week (Google Ads + Monthly Reports)
-- 📈 **NexoBank proposal** due Friday — high-value lead ($8,000/mo potential)
-- 🆕 **Luxora Jewelry onboarded** — schedule kick-off call
-
-**Recommended next actions:**
-1. Finalize TechForge Google Ads campaign (critical, due tomorrow)
-2. Send NexoBank proposal deck before Friday
-3. Confirm May calendar with Bloom Skincare team`
+type Summary = {
+  highlights: { icon: string; text: string }[]
+  actions: string[]
+  generatedAt: string
+}
 
 export function AISummaryWidget() {
   const [expanded, setExpanded] = useState(false)
+  const [summary, setSummary] = useState<Summary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  const fetchSummary = useCallback(async () => {
+    setLoading(true)
+    setError(false)
+    try {
+      const res = await fetch('/api/dashboard/summary', { method: 'POST' })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setSummary(data)
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchSummary() }, [fetchSummary])
+
+  const generatedLabel = summary
+    ? new Date(summary.generatedAt).toLocaleString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : null
 
   return (
     <div
@@ -42,76 +59,94 @@ export function AISummaryWidget() {
               Resumen Semanal IA
             </h3>
             <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
-              Generado por Claude · 14 mayo 2025
+              {loading ? 'Generando…' : error ? 'Error al generar' : `Generado por Claude · ${generatedLabel}`}
             </p>
           </div>
         </div>
         <button
-          className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors"
+          onClick={fetchSummary}
+          disabled={loading}
+          className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
           style={{
             background: 'rgba(111,43,250,0.1)',
             color: 'var(--color-accent)',
             border: '1px solid rgba(111,43,250,0.2)',
           }}
         >
-          <RefreshCw size={11} />
+          {loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
           Actualizar
         </button>
       </div>
 
       <div className="space-y-2">
-        <div
-          className="text-xs leading-relaxed"
-          style={{ color: 'var(--color-text-2)' }}
-        >
-          <AnimatePresence initial={false}>
+        <AnimatePresence mode="wait">
+          {loading ? (
             <motion.div
-              key={expanded ? 'expanded' : 'collapsed'}
-              initial={false}
-              animate={{ height: expanded ? 'auto' : '80px', overflow: 'hidden' }}
-              transition={{ duration: 0.2 }}
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2 py-2"
             >
-              <div className="space-y-1.5">
-                {[
-                  { icon: '🟢', text: '18 tareas completadas — por encima del ritmo de la semana pasada (+22%)' },
-                  { icon: '💰', text: '$3,200 recibidos de Bloom Skincare (factura de mayo)' },
-                  { icon: '🚨', text: '3 tareas críticas requieren atención esta semana' },
-                  { icon: '📈', text: 'Propuesta NexoBank vence el viernes — potencial $8,000/mes' },
-                  { icon: '🆕', text: 'Luxora Jewelry incorporada — agendar llamada de inicio' },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span>{item.icon}</span>
-                    <p className="text-xs" style={{ color: 'var(--color-text-2)' }}>
-                      {item.text}
-                    </p>
-                  </div>
-                ))}
-                {expanded && (
-                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
-                    <p className="text-xs font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
-                      Acciones recomendadas:
-                    </p>
-                    {[
-                      'Finalizar campaña Google Ads de TechForge (crítico, vence mañana)',
-                      'Enviar propuesta a NexoBank antes del viernes',
-                      'Confirmar calendario de mayo con el equipo de Bloom Skincare',
-                    ].map((action, i) => (
-                      <div key={i} className="flex items-center gap-2 py-1">
-                        <span
-                          className="w-4 h-4 rounded flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                          style={{ background: 'var(--color-primary)' }}
-                        >
-                          {i + 1}
-                        </span>
-                        <p className="text-xs" style={{ color: 'var(--color-text-2)' }}>{action}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {[...Array(4)].map((_, i) => (
+                <div
+                  key={i}
+                  className="h-3 rounded animate-pulse"
+                  style={{ background: 'rgba(111,43,250,0.1)', width: `${70 + i * 8}%` }}
+                />
+              ))}
             </motion.div>
-          </AnimatePresence>
-        </div>
+          ) : error ? (
+            <motion.p
+              key="error"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-xs py-2"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              No se pudo generar el resumen. Intentá de nuevo.
+            </motion.p>
+          ) : summary ? (
+            <motion.div
+              key="content"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              <motion.div
+                animate={{ height: expanded ? 'auto' : '80px', overflow: 'hidden' }}
+                transition={{ duration: 0.2 }}
+              >
+                <div className="space-y-1.5">
+                  {summary.highlights.map((item, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span>{item.icon}</span>
+                      <p className="text-xs" style={{ color: 'var(--color-text-2)' }}>{item.text}</p>
+                    </div>
+                  ))}
+                  {expanded && summary.actions.length > 0 && (
+                    <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
+                      <p className="text-xs font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
+                        Acciones recomendadas:
+                      </p>
+                      {summary.actions.map((action, i) => (
+                        <div key={i} className="flex items-center gap-2 py-1">
+                          <span
+                            className="w-4 h-4 rounded flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                            style={{ background: 'var(--color-primary)' }}
+                          >
+                            {i + 1}
+                          </span>
+                          <p className="text-xs" style={{ color: 'var(--color-text-2)' }}>{action}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
 
       <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
@@ -119,6 +154,7 @@ export function AISummaryWidget() {
           onClick={() => setExpanded(!expanded)}
           className="text-xs font-medium transition-colors"
           style={{ color: 'var(--color-accent)' }}
+          disabled={loading || error}
         >
           {expanded ? 'Ver menos' : 'Ver más'}
         </button>
