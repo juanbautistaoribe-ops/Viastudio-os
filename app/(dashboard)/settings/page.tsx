@@ -314,24 +314,84 @@ function NotificationsSettings() {
 }
 
 function SecuritySettings() {
+  const [form, setForm] = useState({ current: '', next: '', confirm: '' })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })) }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setSuccess(false)
+
+    if (!form.current) { setError('Ingresá tu contraseña actual'); return }
+    if (form.next.length < 8) { setError('La nueva contraseña debe tener al menos 8 caracteres'); return }
+    if (form.next !== form.confirm) { setError('Las contraseñas nuevas no coinciden'); return }
+
+    setLoading(true)
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user?.email) throw new Error('No se pudo obtener el usuario')
+
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: form.current,
+      })
+      if (signInErr) { setError('La contraseña actual es incorrecta'); return }
+
+      const { error: updateErr } = await supabase.auth.updateUser({ password: form.next })
+      if (updateErr) throw updateErr
+
+      setSuccess(true)
+      setForm({ current: '', next: '', confirm: '' })
+      setTimeout(() => setSuccess(false), 3000)
+    } catch (err: any) {
+      setError(err.message ?? 'Error al actualizar la contraseña')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div>
       <h2 className="text-base font-bold mb-6" style={{ color: 'var(--color-text)' }}>Seguridad</h2>
       <SettingSection title="Cambiar contraseña">
-        <div className="space-y-3 max-w-sm">
-          {['Contraseña actual', 'Nueva contraseña', 'Confirmar nueva contraseña'].map((label) => (
-            <div key={label}>
+        <form onSubmit={handleSubmit} className="space-y-3 max-w-sm">
+          {[
+            { key: 'current', label: 'Contraseña actual' },
+            { key: 'next',    label: 'Nueva contraseña' },
+            { key: 'confirm', label: 'Confirmar nueva contraseña' },
+          ].map(({ key, label }) => (
+            <div key={key}>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-2)' }}>{label}</label>
-              <input type="password" className="input-base text-xs" placeholder="••••••••" />
+              <input
+                type="password"
+                className="input-base text-xs"
+                placeholder="••••••••"
+                value={form[key as keyof typeof form]}
+                onChange={e => set(key, e.target.value)}
+              />
             </div>
           ))}
+
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          {success && <p className="text-xs" style={{ color: 'var(--color-success)' }}>¡Contraseña actualizada correctamente!</p>}
+
           <button
-            className="px-4 py-2 rounded-lg text-xs font-semibold text-white"
+            type="submit"
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-60"
             style={{ background: 'var(--color-primary)' }}
           >
-            Actualizar contraseña
+            {loading && <Loader2 size={13} className="animate-spin" />}
+            {success ? <><Check size={13} /> Actualizada</> : 'Actualizar contraseña'}
           </button>
-        </div>
+        </form>
       </SettingSection>
     </div>
   )
