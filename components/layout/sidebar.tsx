@@ -47,10 +47,11 @@ export function Sidebar() {
   const avatarBg = generateAvatarColor(name)
 
   return (
+    <div className="relative flex-shrink-0">
     <motion.aside
       animate={{ width: sidebarCollapsed ? 64 : 240 }}
       transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-      className="relative flex flex-col h-full shrink-0 overflow-hidden"
+      className="flex flex-col h-full overflow-hidden"
       style={{
         background: 'var(--color-surface)',
         borderRight: '1px solid var(--color-border-subtle)',
@@ -223,7 +224,9 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Collapse toggle */}
+    </motion.aside>
+
+      {/* Collapse toggle — outside aside so overflow:hidden doesn't clip it */}
       <button
         onClick={toggleSidebar}
         className="absolute -right-3 top-[56px] w-6 h-6 rounded-full flex items-center justify-center z-10 transition-all"
@@ -238,6 +241,6 @@ export function Sidebar() {
           : <ChevronLeft size={12} />
         }
       </button>
-    </motion.aside>
+    </div>
   )
 }

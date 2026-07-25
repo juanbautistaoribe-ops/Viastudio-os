@@ -76,6 +76,30 @@
   a { text-decoration: none; color: inherit; }
 }
 
+@layer components {
+  /* input-base in components so Tailwind utility pl-* / pr-* always override its padding */
+  .input-base {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    background-color: var(--color-surface-3);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .input-base::placeholder { color: var(--color-text-muted); }
+
+  .input-base:focus {
+    border-color: rgba(111, 43, 250, 0.6);
+    box-shadow: 0 0 0 3px rgba(111, 43, 250, 0.12), 0 0 12px rgba(111, 43, 250, 0.08);
+    outline: none;
+  }
+
+  .input-base:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
 @layer utilities {
   .text-primary { color: var(--color-primary); }
   .text-accent { color: var(--color-accent); }
@@ -188,32 +212,6 @@
   .badge-primary { background: rgba(111,43,250,0.12); color: var(--color-accent);  border: 1px solid rgba(111,43,250,0.2); }
   .badge-muted   { background: var(--color-surface-3); color: var(--color-text-2); border: 1px solid var(--color-border); }
 
-  /* ── Inputs ─────────────────────────────────────────────────────────── */
-  .input-base {
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.5rem;
-    font-size: 0.8125rem;
-    background-color: var(--color-surface-3);
-    border: 1px solid var(--color-border);
-    color: var(--color-text);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  }
-
-  .input-base::placeholder {
-    color: var(--color-text-muted);
-  }
-
-  .input-base:focus {
-    border-color: rgba(111, 43, 250, 0.6);
-    box-shadow: 0 0 0 3px rgba(111, 43, 250, 0.12), 0 0 12px rgba(111, 43, 250, 0.08);
-    outline: none;
-  }
-
-  .input-base:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
 
   /* ── Sidebar active indicator ────────────────────────────────────────── */
   .sidebar-item.active {
