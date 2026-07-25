@@ -8,7 +8,7 @@ export default function DashboardLayout({
   return (
     <div className="flex h-full" style={{ background: 'var(--color-bg)' }}>
       <Sidebar />
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+      <div className="animate-page flex flex-col flex-1 min-w-0 overflow-hidden">
         {children}
       </div>
     </div>

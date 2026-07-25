@@ -87,7 +87,7 @@ export function Header({ actions }: HeaderProps) {
             <Bell size={16} />
             {unread > 0 && (
               <span
-                className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold text-white px-0.5"
+                className="notif-ping absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold text-white px-0.5"
                 style={{ background: 'var(--color-primary)' }}
               >
                 {unread}

@@ -63,7 +63,7 @@ export function Sidebar() {
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <div
-            className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0"
+            className="logo-glow flex items-center justify-center w-7 h-7 rounded-lg shrink-0"
             style={{ background: 'linear-gradient(135deg, #6F2BFA 0%, #3300A6 100%)' }}
           >
             <Zap size={14} color="white" strokeWidth={2.5} />
