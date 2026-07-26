@@ -67,16 +67,21 @@ export function Header({ actions }: HeaderProps) {
 
   return (
     <header
-      className="flex items-center justify-between h-14 px-6 shrink-0"
+      className="flex items-center justify-between h-14 px-4 md:px-6 shrink-0"
       style={{ borderBottom: '1px solid var(--color-border-subtle)', background: 'var(--color-surface)' }}
     >
-      <motion.div key={pathname} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
-        <h1 className="text-sm font-semibold tracking-tight" style={{ color: 'var(--color-text)' }}>{meta.title}</h1>
-        {meta.description && <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{meta.description}</p>}
-      </motion.div>
+      <div className="flex items-center gap-3">
+        {/* Logo — solo visible en mobile */}
+        <img src="/via-logo.svg" alt="ViaStudio" className="w-7 h-7 rounded-lg object-cover md:hidden" />
+        <motion.div key={pathname} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
+          <h1 className="text-sm font-semibold tracking-tight" style={{ color: 'var(--color-text)' }}>{meta.title}</h1>
+          {meta.description && <p className="text-xs hidden md:block" style={{ color: 'var(--color-text-muted)' }}>{meta.description}</p>}
+        </motion.div>
+      </div>
 
       <div className="flex items-center gap-2">
         {actions}
+
 
         <div className="relative" ref={bellRef}>
           <button
