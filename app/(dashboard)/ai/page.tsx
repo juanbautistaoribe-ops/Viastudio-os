@@ -6,15 +6,24 @@ import { Header } from '@/components/layout/header'
 import {
   Sparkles, Send, Plus, Loader2, Copy, Check,
   TrendingUp, FileText, MessageSquare, Zap, BarChart,
-  List, PenLine, Users, Lightbulb, ChevronRight
+  List, PenLine, Users, Lightbulb, ChevronRight, CheckSquare
 } from 'lucide-react'
 import type { AIFunction } from '@/types'
+
+interface CreatedTask {
+  id: string
+  title: string
+  priority: string
+  dueDate: string | null
+  client: { name: string; company: string } | null
+}
 
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   createdAt: Date
+  createdTasks?: CreatedTask[]
 }
 
 const AI_FUNCTIONS: {
@@ -257,38 +266,59 @@ export default function AIPage() {
 
     try {
       const clientContext = buildClientContext(clients)
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
-          functionId: activeFn,
-          systemContext: clientContext || undefined,
-        }),
-      })
 
-      if (!response.ok) throw new Error('API error')
+      if (fnId === 'task_generator') {
+        // Usa el endpoint con tool calling para crear tareas reales
+        const response = await fetch('/api/ai/create-task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+            systemContext: clientContext || undefined,
+          }),
+        })
+        if (!response.ok) throw new Error('API error')
+        const data = await response.json()
+        const fullContent = data.text ?? ''
+        const createdTasks = data.createdTasks ?? []
+        setMessages(fnId, (prev) => {
+          const updated = [...prev]
+          updated[updated.length - 1] = { ...assistantMsg, content: fullContent, createdTasks }
+          return updated
+        })
+        if (fullContent) saveMessage(fnId, 'assistant', fullContent)
+      } else {
+        // Chat normal con streaming
+        const response = await fetch('/api/ai/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+            functionId: activeFn,
+            systemContext: clientContext || undefined,
+          }),
+        })
+        if (!response.ok) throw new Error('API error')
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      let fullContent = ''
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder()
+        let fullContent = ''
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          const chunk = decoder.decode(value)
-          fullContent += chunk
-          setMessages(fnId, (prev) => {
-            const updated = [...prev]
-            updated[updated.length - 1] = { ...assistantMsg, content: fullContent }
-            return updated
-          })
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            const chunk = decoder.decode(value)
+            fullContent += chunk
+            setMessages(fnId, (prev) => {
+              const updated = [...prev]
+              updated[updated.length - 1] = { ...assistantMsg, content: fullContent }
+              return updated
+            })
+          }
         }
+        if (fullContent) saveMessage(fnId, 'assistant', fullContent)
       }
-
-      // Guarda respuesta del asistente en DB
-      if (fullContent) saveMessage(fnId, 'assistant', fullContent)
     } catch {
       setMessages(fnId, (prev) => {
         const updated = [...prev]
@@ -508,6 +538,32 @@ export default function AIPage() {
                         <p>{msg.content}</p>
                       )}
                     </div>
+
+                    {msg.role === 'assistant' && msg.createdTasks && msg.createdTasks.length > 0 && (
+                      <div className="mt-2 space-y-1.5">
+                        {msg.createdTasks.map((task) => (
+                          <div
+                            key={task.id}
+                            className="flex items-start gap-2.5 px-3 py-2 rounded-xl text-xs"
+                            style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
+                          >
+                            <CheckSquare size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--color-success)' }} />
+                            <div>
+                              <p className="font-semibold" style={{ color: 'var(--color-text)' }}>
+                                ✓ Tarea creada: {task.title}
+                              </p>
+                              <p style={{ color: 'var(--color-text-muted)' }}>
+                                {[
+                                  task.client?.company,
+                                  task.priority,
+                                  task.dueDate ? `Vence ${new Date(task.dueDate).toLocaleDateString('es-AR')}` : null,
+                                ].filter(Boolean).join(' · ')}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     {msg.role === 'assistant' && msg.content && (
                       <button
