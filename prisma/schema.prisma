@@ -76,7 +76,6 @@ model Client {
 enum ClientStatus {
   ACTIVE
   INACTIVE
-  PROSPECT
   CHURNED
 }
 
@@ -223,7 +222,7 @@ model Lead {
   id              String       @id @default(uuid())
   name            String
   company         String
-  email           String
+  email           String?
   phone           String?
   website         String?
   status          LeadStatus   @default(NEW)

@@ -8,8 +8,9 @@ export const maxDuration = 30
 async function getOrCreateProfile(userId: string, email: string) {
   let profile = await prisma.profile.findUnique({ where: { userId } })
   if (!profile) {
+    const name = email ? email.split('@')[0] : userId.slice(0, 8)
     profile = await prisma.profile.create({
-      data: { userId, name: email.split('@')[0], email },
+      data: { userId, name, email: email || `${userId}@placeholder.local` },
     })
   }
   return profile
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
       data: {
         name: body.name,
         company: body.company,
-        email: body.email,
+        email: body.email ?? null,
         phone: body.phone ?? null,
         website: body.website ?? null,
         status: (body.status ?? 'new').toUpperCase() as any,

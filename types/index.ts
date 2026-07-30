@@ -14,7 +14,7 @@ export interface User {
 
 // ─── Clients / CRM ───────────────────────────────────────────────────────────
 
-export type ClientStatus = 'active' | 'inactive' | 'prospect' | 'churned'
+export type ClientStatus = 'active' | 'inactive' | 'churned'
 export type ServiceType =
   | 'social_media'
   | 'paid_ads'
@@ -124,7 +124,7 @@ export interface Lead {
   id: string
   name: string
   company: string
-  email: string
+  email?: string
   phone?: string
   website?: string
   status: LeadStatus

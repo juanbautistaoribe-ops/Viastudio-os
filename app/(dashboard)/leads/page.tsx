@@ -6,7 +6,7 @@ import { Header } from '@/components/layout/header'
 import { Avatar } from '@/components/shared/avatar'
 import { NewLeadModal } from '@/components/leads/new-lead-modal'
 import { formatCurrency, formatDate, getStatusBadgeClass, getStatusLabel } from '@/lib/utils'
-import { Plus, Search, Clock, MoreHorizontal, Loader2 } from 'lucide-react'
+import { Plus, Search, Clock, MoreHorizontal, Loader2, UserCheck } from 'lucide-react'
 import type { Lead, LeadStatus } from '@/types'
 
 const PIPELINE_STAGES: { id: LeadStatus; label: string; color: string }[] = [
@@ -54,11 +54,23 @@ export default function LeadsPage() {
     )
   }, [leads, search])
 
-  const totalValue = leads.reduce((a, l) => a + (l.potentialValue ?? 0), 0)
-  const wonValue = leads.filter(l => l.status === 'won').reduce((a, l) => a + (l.potentialValue ?? 0), 0)
+  const activeLeads = leads.filter(l => !['won', 'lost'].includes(l.status))
+  const pipelineARS = activeLeads.filter(l => (l.currency ?? 'ARS') === 'ARS').reduce((a, l) => a + (l.potentialValue ?? 0), 0)
+  const pipelineUSD = activeLeads.filter(l => l.currency === 'USD').reduce((a, l) => a + (l.potentialValue ?? 0), 0)
+  const closedLeads = leads.filter(l => ['won', 'lost'].includes(l.status))
+  const conversionRate = closedLeads.length > 0
+    ? Math.round((leads.filter(l => l.status === 'won').length / closedLeads.length) * 100)
+    : 0
 
   const handleCreated = (lead: Lead) => setLeads((prev) => [lead, ...prev])
   const handleUpdated = (updated: Lead) => setLeads((prev) => prev.map(l => l.id === updated.id ? updated : l))
+  const handleConvert = async (lead: Lead) => {
+    if (!confirm(`¿Convertir "${lead.company}" en cliente activo?`)) return
+    const res = await fetch(`/api/leads/${lead.id}/convert`, { method: 'POST' })
+    if (res.ok) {
+      setLeads((prev) => prev.map(l => l.id === lead.id ? { ...l, status: 'won' as LeadStatus } : l))
+    }
+  }
   const handleDelete = async (lead: Lead) => {
     if (!confirm(`¿Eliminar el lead "${lead.company}"?`)) return
     await fetch(`/api/leads/${lead.id}`, { method: 'DELETE' })
@@ -104,10 +116,10 @@ export default function LeadsPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Leads activos', value: leads.filter(l => !['won','lost'].includes(l.status)).length, color: '#6F2BFA' },
-            { label: 'Valor del pipeline', value: formatCurrency(totalValue), color: '#22C55E' },
-            { label: 'Ganado este mes', value: formatCurrency(wonValue), color: '#F59E0B' },
-            { label: 'Tasa de conversión', value: leads.length > 0 ? `${Math.round((leads.filter(l => l.status === 'won').length / leads.length) * 100)}%` : '0%', color: '#3B82F6' },
+            { label: 'Leads activos', value: activeLeads.length, color: '#6F2BFA' },
+            { label: 'Pipeline ARS', value: formatCurrency(pipelineARS, 'ARS'), color: '#22C55E' },
+            { label: 'Pipeline USD', value: formatCurrency(pipelineUSD, 'USD'), color: '#F59E0B' },
+            { label: 'Tasa de conversión', value: `${conversionRate}%`, color: '#3B82F6' },
           ].map(({ label, value, color }, i) => (
             <motion.div key={label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="card p-4">
               <p className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
@@ -175,7 +187,9 @@ export default function LeadsPage() {
                       </span>
                     </div>
                     {stageValue > 0 && (
-                      <span className="text-[10px] font-semibold" style={{ color: stage.color }}>{formatCurrency(stageValue)}</span>
+                      <span className="text-[10px] font-semibold" style={{ color: stage.color }}>
+                        {stageLeads[0]?.currency === 'USD' ? formatCurrency(stageValue, 'USD') : formatCurrency(stageValue, 'ARS')}
+                      </span>
                     )}
                   </div>
 
@@ -198,6 +212,7 @@ export default function LeadsPage() {
                           delay={i * 0.04}
                           onEdit={() => setEditingLead(lead)}
                           onDelete={() => handleDelete(lead)}
+                          onConvert={() => handleConvert(lead)}
                           onDragStart={() => handleDragStart(lead.id)}
                         />
                       ))
@@ -228,6 +243,7 @@ export default function LeadsPage() {
                     isLast={i === filtered.length - 1}
                     onEdit={() => setEditingLead(lead)}
                     onDelete={() => handleDelete(lead)}
+                    onConvert={() => handleConvert(lead)}
                   />
                 ))}
               </tbody>
@@ -242,9 +258,9 @@ export default function LeadsPage() {
   )
 }
 
-function LeadCard({ lead, delay = 0, onEdit, onDelete, onDragStart }: {
+function LeadCard({ lead, delay = 0, onEdit, onDelete, onConvert, onDragStart }: {
   lead: Lead; delay?: number
-  onEdit: () => void; onDelete: () => void; onDragStart: () => void
+  onEdit: () => void; onDelete: () => void; onConvert: () => void; onDragStart: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -282,7 +298,12 @@ function LeadCard({ lead, delay = 0, onEdit, onDelete, onDragStart }: {
             <MoreHorizontal size={11} />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-6 z-20 rounded-xl shadow-xl py-1 w-32" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
+            <div className="absolute right-0 top-6 z-20 rounded-xl shadow-xl py-1 w-44" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
+              {lead.status !== 'won' && lead.status !== 'lost' && (
+                <button onClick={() => { setMenuOpen(false); onConvert() }} className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-1.5 hover:bg-[rgba(255,255,255,0.05)]" style={{ color: '#22C55E' }}>
+                  <UserCheck size={11} /> Convertir a cliente
+                </button>
+              )}
               <button onClick={() => { setMenuOpen(false); onEdit() }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-[rgba(255,255,255,0.05)]" style={{ color: 'var(--color-text-2)' }}>Editar</button>
               <button onClick={() => { setMenuOpen(false); onDelete() }} className="w-full text-left px-3 py-1.5 text-xs" style={{ color: '#EF4444' }}>Eliminar</button>
             </div>
@@ -291,7 +312,7 @@ function LeadCard({ lead, delay = 0, onEdit, onDelete, onDragStart }: {
       </div>
       <p className="text-[10px] mb-2" style={{ color: 'var(--color-text-muted)' }}>{lead.name}</p>
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold" style={{ color: 'var(--color-success)' }}>{formatCurrency(lead.potentialValue ?? 0)}</span>
+        <span className="text-[10px] font-bold" style={{ color: 'var(--color-success)' }}>{formatCurrency(lead.potentialValue ?? 0, lead.currency ?? 'ARS')}</span>
         {lead.nextActionDate && (
           <span className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--color-text-muted)' }}>
             <Clock size={9} /> {formatDate(lead.nextActionDate)}
@@ -302,8 +323,8 @@ function LeadCard({ lead, delay = 0, onEdit, onDelete, onDragStart }: {
   )
 }
 
-function LeadRow({ lead, isLast, onEdit, onDelete }: {
-  lead: Lead; isLast: boolean; onEdit: () => void; onDelete: () => void
+function LeadRow({ lead, isLast, onEdit, onDelete, onConvert }: {
+  lead: Lead; isLast: boolean; onEdit: () => void; onDelete: () => void; onConvert: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -334,7 +355,7 @@ function LeadRow({ lead, isLast, onEdit, onDelete }: {
         {SOURCE_LABELS[lead.source] ?? lead.source}
       </td>
       <td className="px-4 py-3 font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
-        {formatCurrency(lead.potentialValue ?? 0)}
+        {formatCurrency(lead.potentialValue ?? 0, lead.currency ?? 'ARS')}
       </td>
       <td className="px-4 py-3">
         {lead.nextAction ? (
@@ -358,7 +379,12 @@ function LeadRow({ lead, isLast, onEdit, onDelete }: {
             <MoreHorizontal size={13} />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-7 z-20 rounded-xl shadow-xl py-1 w-32" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
+            <div className="absolute right-0 top-7 z-20 rounded-xl shadow-xl py-1 w-44" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
+              {lead.status !== 'won' && lead.status !== 'lost' && (
+                <button onClick={() => { setMenuOpen(false); onConvert() }} className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-1.5 hover:bg-[rgba(255,255,255,0.05)]" style={{ color: '#22C55E' }}>
+                  <UserCheck size={11} /> Convertir a cliente
+                </button>
+              )}
               <button onClick={() => { setMenuOpen(false); onEdit() }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-[rgba(255,255,255,0.05)]" style={{ color: 'var(--color-text-2)' }}>Editar</button>
               <button onClick={() => { setMenuOpen(false); onDelete() }} className="w-full text-left px-3 py-1.5 text-xs" style={{ color: '#EF4444' }}>Eliminar</button>
             </div>

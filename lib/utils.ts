@@ -82,7 +82,6 @@ export function getGrowthPrefix(value: number): string {
 const STATUS_COLORS: Record<string, string> = {
   active: 'badge-success', ACTIVE: 'badge-success',
   inactive: 'badge-muted', INACTIVE: 'badge-muted',
-  prospect: 'badge-info', PROSPECT: 'badge-info',
   churned: 'badge-danger', CHURNED: 'badge-danger',
   backlog: 'badge-muted', BACKLOG: 'badge-muted',
   todo: 'badge-info', TODO: 'badge-info',
@@ -106,7 +105,6 @@ export function getStatusBadgeClass(status: string): string {
 const STATUS_LABELS: Record<string, string> = {
   active: 'Activo', ACTIVE: 'Activo',
   inactive: 'Inactivo', INACTIVE: 'Inactivo',
-  prospect: 'Prospecto', PROSPECT: 'Prospecto',
   churned: 'Perdido', CHURNED: 'Perdido',
   backlog: 'Backlog', BACKLOG: 'Backlog',
   todo: 'Por hacer', TODO: 'Por hacer',

@@ -7,7 +7,6 @@ import type { ClientStatus, ViewMode } from '@/types'
 const STATUS_OPTIONS: { value: ClientStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'Todos' },
   { value: 'active', label: 'Activos' },
-  { value: 'prospect', label: 'Prospectos' },
   { value: 'inactive', label: 'Inactivos' },
   { value: 'churned', label: 'Perdidos' },
 ]

@@ -94,7 +94,7 @@ export const MOCK_CLIENTS: Client[] = [
     name: 'Valentina Cruz',
     company: 'Luxora Jewelry',
     email: 'val@luxorajewelry.com',
-    status: 'prospect',
+    status: 'inactive',
     services: ['branding', 'social_media'],
     monthlyValue: 0,
     currency: 'USD',

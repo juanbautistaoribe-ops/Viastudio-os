@@ -13,6 +13,7 @@ const EMPTY_FORM = {
   source: 'inbound',
   priority: 'medium',
   potentialValue: '',
+  currency: 'ARS',
   notes: '',
 }
 
@@ -26,6 +27,7 @@ interface Props {
 
 export function NewLeadModal({ open, lead, onClose, onCreated, onUpdated }: Props) {
   const [form, setForm] = useState(EMPTY_FORM)
+  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const isEdit = !!lead
@@ -42,11 +44,13 @@ export function NewLeadModal({ open, lead, onClose, onCreated, onUpdated }: Prop
           source: lead.source ?? 'inbound',
           priority: lead.priority ?? 'medium',
           potentialValue: String(lead.potentialValue ?? ''),
+          currency: lead.currency ?? 'ARS',
           notes: lead.notes ?? '',
         })
       } else {
         setForm(EMPTY_FORM)
       }
+      setError('')
     }
   }, [open, lead])
 
@@ -64,11 +68,18 @@ export function NewLeadModal({ open, lead, onClose, onCreated, onUpdated }: Prop
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.name || !form.company || !form.email) return
+    if (!form.name || !form.company) return
+    if (!form.email && !form.phone) {
+      setError('Ingresá al menos un contacto: email o teléfono/WhatsApp')
+      return
+    }
+    setError('')
     setLoading(true)
     try {
       const payload = {
         ...form,
+        email: form.email || null,
+        phone: form.phone || null,
         potentialValue: parseFloat(form.potentialValue) || 0,
       }
       if (isEdit && lead) {
@@ -131,14 +142,18 @@ export function NewLeadModal({ open, lead, onClose, onCreated, onUpdated }: Prop
           </div>
 
           <div>
-            <label className={labelClass} style={{ color: 'var(--color-text-muted)' }}>Email *</label>
-            <input type="email" className={inputClass} value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="email@empresa.com" required />
+            <label className={labelClass} style={{ color: 'var(--color-text-muted)' }}>Email</label>
+            <input type="email" className={inputClass} value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="email@empresa.com" />
           </div>
 
           <div>
-            <label className={labelClass} style={{ color: 'var(--color-text-muted)' }}>Teléfono</label>
+            <label className={labelClass} style={{ color: 'var(--color-text-muted)' }}>Teléfono / WhatsApp</label>
             <input className={inputClass} value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+54 11 0000-0000" />
           </div>
+
+          {error && (
+            <p className="text-xs px-3 py-2 rounded-lg" style={{ color: '#EF4444', background: 'rgba(239,68,68,0.1)' }}>{error}</p>
+          )}
 
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -174,16 +189,25 @@ export function NewLeadModal({ open, lead, onClose, onCreated, onUpdated }: Prop
             </div>
           </div>
 
-          <div>
-            <label className={labelClass} style={{ color: 'var(--color-text-muted)' }}>Valor potencial (ARS)</label>
-            <input
-              type="number"
-              min="0"
-              className={inputClass}
-              value={form.potentialValue}
-              onChange={(e) => set('potentialValue', e.target.value)}
-              placeholder="0"
-            />
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <label className={labelClass} style={{ color: 'var(--color-text-muted)' }}>Valor potencial</label>
+              <input
+                type="number"
+                min="0"
+                className={inputClass}
+                value={form.potentialValue}
+                onChange={(e) => set('potentialValue', e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label className={labelClass} style={{ color: 'var(--color-text-muted)' }}>Moneda</label>
+              <select className={inputClass} value={form.currency} onChange={(e) => set('currency', e.target.value)}>
+                <option value="ARS">ARS</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
           </div>
 
           <div>

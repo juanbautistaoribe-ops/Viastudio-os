@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { NewClientModal } from '@/components/crm/new-client-modal'
 import { ContactsPanel } from '@/components/crm/contacts-panel'
 import type { Client, ClientStatus, ViewMode } from '@/types'
+import { formatCurrency } from '@/lib/utils'
 import { Users } from 'lucide-react'
 
 export default function CRMPage() {
@@ -50,12 +51,15 @@ export default function CRMPage() {
     })
   }, [clients, search, statusFilter])
 
-  const stats = useMemo(() => ({
-    total: clients.length,
-    active: clients.filter(c => (c.status as string).toLowerCase() === 'active').length,
-    prospects: clients.filter(c => (c.status as string).toLowerCase() === 'prospect').length,
-    mrr: clients.reduce((a, c) => a + (c.monthlyValue ?? 0), 0),
-  }), [clients])
+  const stats = useMemo(() => {
+    const activeClients = clients.filter(c => (c.status as string).toLowerCase() === 'active')
+    return {
+      total: clients.length,
+      active: activeClients.length,
+      mrrARS: activeClients.filter(c => (c.currency ?? 'ARS') === 'ARS').reduce((a, c) => a + (c.monthlyValue ?? 0), 0),
+      mrrUSD: activeClients.filter(c => c.currency === 'USD').reduce((a, c) => a + (c.monthlyValue ?? 0), 0),
+    }
+  }, [clients])
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -66,8 +70,8 @@ export default function CRMPage() {
           {[
             { label: 'Total', value: stats.total, color: 'var(--color-text)' },
             { label: 'Activos', value: stats.active, color: 'var(--color-success)' },
-            { label: 'Prospectos', value: stats.prospects, color: 'var(--color-info)' },
-            { label: 'MRR', value: `$${(stats.mrr / 1000).toFixed(1)}k`, color: 'var(--color-accent)' },
+            { label: 'MRR ARS', value: formatCurrency(stats.mrrARS, 'ARS'), color: 'var(--color-accent)' },
+            { label: 'MRR USD', value: formatCurrency(stats.mrrUSD, 'USD'), color: 'var(--color-info)' },
           ].map(({ label, value, color }) => (
             <div key={label}>
               <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
