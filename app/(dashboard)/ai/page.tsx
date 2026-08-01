@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Header } from '@/components/layout/header'
 import {
   Sparkles, Send, Plus, Loader2, Copy, Check,
   TrendingUp, FileText, MessageSquare, Zap, BarChart,
-  List, PenLine, Users, Lightbulb, ChevronRight, CheckSquare
+  List, PenLine, Users, Lightbulb, ChevronRight, CheckSquare,
+  ImageIcon, X
 } from 'lucide-react'
 import type { AIFunction } from '@/types'
 
@@ -18,10 +19,17 @@ interface CreatedTask {
   client: { name: string; company: string } | null
 }
 
+interface PendingImage {
+  data: string
+  mediaType: string
+  name: string
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  image?: { data: string; mediaType: string }
   createdAt: Date
   createdTasks?: CreatedTask[]
 }
@@ -169,8 +177,11 @@ export default function AIPage() {
   const [activeFn, setActiveFn] = useState<AIFunction | null>(null)
   const [clients, setClients] = useState<any[]>([])
   const [dbLoaded, setDbLoaded] = useState(false)
+  const [pendingImage, setPendingImage] = useState<PendingImage | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const currentMessages = activeFn ? (messages[activeFn] ?? []) : []
 
@@ -237,13 +248,37 @@ export default function AIPage() {
     return convId
   }
 
+  const handleImageFile = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string
+      const base64 = dataUrl.split(',')[1]
+      setPendingImage({ data: base64, mediaType: file.type, name: file.name })
+    }
+    reader.readAsDataURL(file)
+  }, [])
+
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false) }
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) handleImageFile(file)
+  }
+
   async function sendMessage(content: string) {
-    if (!content.trim() || loading || !activeFn) return
+    if ((!content.trim() && !pendingImage) || loading || !activeFn) return
+
+    const imageToSend = pendingImage
+    setPendingImage(null)
 
     const userMsg: Message = {
       id: Math.random().toString(36).slice(2),
       role: 'user',
       content: content.trim(),
+      image: imageToSend ? { data: imageToSend.data, mediaType: imageToSend.mediaType } : undefined,
       createdAt: new Date(),
     }
 
@@ -275,6 +310,7 @@ export default function AIPage() {
           body: JSON.stringify({
             messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
             systemContext: clientContext || undefined,
+            currentImage: imageToSend ?? undefined,
           }),
         })
         if (!response.ok) throw new Error('API error')
@@ -296,6 +332,7 @@ export default function AIPage() {
             messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
             functionId: activeFn,
             systemContext: clientContext || undefined,
+            currentImage: imageToSend ?? undefined,
           }),
         })
         if (!response.ok) throw new Error('API error')
@@ -337,6 +374,17 @@ export default function AIPage() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage(input)
+    }
+    // paste image from clipboard
+    if (e.key === 'v' && (e.ctrlKey || e.metaKey)) {
+      navigator.clipboard.read?.().then(items => {
+        for (const item of items) {
+          const imgType = item.types.find(t => t.startsWith('image/'))
+          if (imgType) {
+            item.getType(imgType).then(blob => handleImageFile(new File([blob], 'pasted.png', { type: imgType })))
+          }
+        }
+      }).catch(() => {})
     }
   }
 
@@ -515,7 +563,14 @@ export default function AIPage() {
                             }
                       }
                     >
-                      {msg.role === 'assistant' && msg.content === '' && loading ? (
+                      {msg.role === 'user' && msg.image && (
+                      <img
+                        src={`data:${msg.image.mediaType};base64,${msg.image.data}`}
+                        alt="imagen adjunta"
+                        className="max-w-xs max-h-48 rounded-xl mb-2 object-cover"
+                      />
+                    )}
+                    {msg.role === 'assistant' && msg.content === '' && loading ? (
                         <div className="flex items-center gap-1.5">
                           <div className="flex gap-1">
                             {[0, 1, 2].map((i) => (
@@ -590,21 +645,74 @@ export default function AIPage() {
         <div
           className="px-5 py-4 shrink-0"
           style={{ borderTop: '1px solid var(--color-border-subtle)' }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-3xl mx-auto relative">
+            {/* Drag overlay */}
+            <AnimatePresence>
+              {isDragging && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl pointer-events-none"
+                  style={{ background: 'rgba(111,43,250,0.12)', border: '2px dashed var(--color-primary)' }}
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <ImageIcon size={24} style={{ color: 'var(--color-primary)' }} />
+                    <p className="text-sm font-medium" style={{ color: 'var(--color-primary)' }}>Soltá la imagen aquí</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Image preview */}
+            {pendingImage && (
+              <div className="mb-2 flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border-subtle)' }}>
+                <img
+                  src={`data:${pendingImage.mediaType};base64,${pendingImage.data}`}
+                  alt="preview"
+                  className="w-10 h-10 rounded-lg object-cover shrink-0"
+                />
+                <p className="text-xs flex-1 truncate" style={{ color: 'var(--color-text-muted)' }}>{pendingImage.name}</p>
+                <button onClick={() => setPendingImage(null)} className="w-5 h-5 rounded flex items-center justify-center" style={{ color: 'var(--color-text-muted)' }}>
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
             <div
               className="flex items-end gap-3 p-3 rounded-2xl"
               style={{
                 background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
+                border: isDragging ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
               }}
             >
+              {/* Image upload button */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors"
+                title="Adjuntar imagen"
+                style={{ color: pendingImage ? 'var(--color-primary)' : 'var(--color-text-muted)', background: pendingImage ? 'rgba(111,43,250,0.12)' : 'transparent' }}
+              >
+                <ImageIcon size={15} />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageFile(f); e.target.value = '' }}
+              />
+
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Pregúntale a Claude sobre tu agencia…"
+                placeholder={pendingImage ? 'Describí qué hacer con la imagen…' : 'Pregúntale a Claude sobre tu agencia…'}
                 rows={1}
                 className="flex-1 text-sm resize-none bg-transparent outline-none"
                 style={{
@@ -620,11 +728,11 @@ export default function AIPage() {
               />
               <button
                 onClick={() => sendMessage(input)}
-                disabled={!input.trim() || loading}
+                disabled={(!input.trim() && !pendingImage) || loading}
                 className="flex items-center justify-center w-8 h-8 rounded-xl transition-all shrink-0"
                 style={{
-                  background: input.trim() && !loading ? 'var(--color-primary)' : 'var(--color-surface-3)',
-                  color: input.trim() && !loading ? 'white' : 'var(--color-text-muted)',
+                  background: (input.trim() || pendingImage) && !loading ? 'var(--color-primary)' : 'var(--color-surface-3)',
+                  color: (input.trim() || pendingImage) && !loading ? 'white' : 'var(--color-text-muted)',
                 }}
               >
                 {loading ? (
@@ -635,7 +743,7 @@ export default function AIPage() {
               </button>
             </div>
             <p className="text-center text-[10px] mt-2" style={{ color: 'var(--color-text-muted)' }}>
-              Enter para enviar · Shift+Enter para nueva línea
+              Enter para enviar · Shift+Enter para nueva línea · Arrastrá una imagen o usá el ícono
             </p>
           </div>
         </div>

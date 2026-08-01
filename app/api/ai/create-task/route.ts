@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const profile = await prisma.profile.findUnique({ where: { userId: user.id } })
     if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
 
-    const { messages, systemContext } = await req.json()
+    const { messages, systemContext, currentImage } = await req.json()
 
     const clients = await prisma.client.findMany({ select: { id: true, name: true, company: true } })
 
@@ -54,15 +54,26 @@ export async function POST(req: NextRequest) {
     const clientList = clients.map(c => `- ID: ${c.id} | Nombre: ${c.name} (${c.company})`).join('\n')
     const fullSystem = `${system}\n\nClientes disponibles:\n${clientList}`
 
+    const claudeMessages = messages.map((m: { role: string; content: string }, i: number) => {
+      const isLast = i === messages.length - 1
+      if (isLast && m.role === 'user' && currentImage) {
+        return {
+          role: 'user' as const,
+          content: [
+            { type: 'image' as const, source: { type: 'base64' as const, media_type: currentImage.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: currentImage.data } },
+            { type: 'text' as const, text: m.content || 'Analizá esta imagen y creá las tareas correspondientes.' },
+          ],
+        }
+      }
+      return { role: m.role as 'user' | 'assistant', content: m.content }
+    })
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: fullSystem,
       tools,
-      messages: messages.map((m: { role: string; content: string }) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
+      messages: claudeMessages,
     })
 
     // Handle tool use
@@ -117,10 +128,7 @@ export async function POST(req: NextRequest) {
           system: fullSystem,
           tools,
           messages: [
-            ...messages.map((m: { role: string; content: string }) => ({
-              role: m.role as 'user' | 'assistant',
-              content: m.content,
-            })),
+            ...claudeMessages,
             { role: 'assistant' as const, content: response.content },
             { role: 'user' as const, content: toolResults },
           ],

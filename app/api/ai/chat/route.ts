@@ -35,7 +35,7 @@ export const FUNCTION_PROMPTS: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, systemContext, functionId } = await req.json()
+    const { messages, systemContext, functionId, currentImage } = await req.json()
 
     const functionPrompt = functionId && FUNCTION_PROMPTS[functionId]
       ? `${FUNCTION_PROMPTS[functionId]}\n\n${BASE_CONTEXT}`
@@ -45,14 +45,25 @@ export async function POST(req: NextRequest) {
       ? `${functionPrompt}\n\nContexto adicional:\n${systemContext}`
       : functionPrompt
 
+    const claudeMessages = messages.map((m: { role: string; content: string }, i: number) => {
+      const isLast = i === messages.length - 1
+      if (isLast && m.role === 'user' && currentImage) {
+        return {
+          role: 'user' as const,
+          content: [
+            { type: 'image' as const, source: { type: 'base64' as const, media_type: currentImage.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: currentImage.data } },
+            { type: 'text' as const, text: m.content || 'Analizá esta imagen.' },
+          ],
+        }
+      }
+      return { role: m.role as 'user' | 'assistant', content: m.content }
+    })
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system,
-      messages: messages.map((m: { role: string; content: string }) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
+      messages: claudeMessages,
     })
 
     const text = response.content[0].type === 'text' ? response.content[0].text : ''
