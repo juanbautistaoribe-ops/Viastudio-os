@@ -17,12 +17,13 @@ interface Props {
   open: boolean
   event?: CalendarEvent | null
   defaultDate?: Date | null
+  defaultClientId?: string
   onClose: () => void
   onCreated?: (event: CalendarEvent) => void
   onUpdated?: (event: CalendarEvent) => void
 }
 
-export function NewEventModal({ open, event, defaultDate, onClose, onCreated, onUpdated }: Props) {
+export function NewEventModal({ open, event, defaultDate, defaultClientId, onClose, onCreated, onUpdated }: Props) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -74,7 +75,7 @@ export function NewEventModal({ open, event, defaultDate, onClose, onCreated, on
     if (!form.title || !form.startDate) return
     setLoading(true)
     try {
-      const payload = { ...form, endDate: form.endDate || form.startDate }
+      const payload = { ...form, endDate: form.endDate || form.startDate, clientId: defaultClientId ?? undefined }
       if (isEdit && event) {
         const res = await fetch(`/api/events/${event.id}`, {
           method: 'PATCH',

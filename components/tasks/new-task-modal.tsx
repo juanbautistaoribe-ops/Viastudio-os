@@ -25,11 +25,13 @@ const EMPTY = { title: '', description: '', status: 'todo', priority: 'medium', 
 interface Props {
   open: boolean
   task?: Task | null
+  defaultClientId?: string
+  defaultDueDate?: string
   onClose: () => void
   onSaved: () => void
 }
 
-export function NewTaskModal({ open, task, onClose, onSaved }: Props) {
+export function NewTaskModal({ open, task, defaultClientId, defaultDueDate, onClose, onSaved }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState(EMPTY)
@@ -46,7 +48,7 @@ export function NewTaskModal({ open, task, onClose, onSaved }: Props) {
           dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : '',
         })
       } else {
-        setForm(EMPTY)
+        setForm({ ...EMPTY, dueDate: defaultDueDate ?? '' })
       }
       setError('')
     }
@@ -66,6 +68,7 @@ export function NewTaskModal({ open, task, onClose, onSaved }: Props) {
         status: form.status,
         priority: form.priority,
         dueDate: form.dueDate || undefined,
+        clientId: defaultClientId ?? undefined,
       }
       const res = isEdit && task
         ? await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
