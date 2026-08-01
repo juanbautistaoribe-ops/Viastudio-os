@@ -30,6 +30,7 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   image?: { data: string; mediaType: string }
+  hadImage?: boolean
   createdAt: Date
   createdTasks?: CreatedTask[]
 }
@@ -208,12 +209,17 @@ export default function AIPage() {
           const fnKey = conv.function.toLowerCase() as string
           if (!msgMap[fnKey]) {
             idMap[fnKey] = conv.id
-            msgMap[fnKey] = (conv.messages ?? []).map((m: any) => ({
-              id: m.id,
-              role: m.role as 'user' | 'assistant',
-              content: m.content,
-              createdAt: new Date(m.createdAt),
-            }))
+            msgMap[fnKey] = (conv.messages ?? []).map((m: any) => {
+              const IMAGE_PREFIX = '[imagen adjunta] '
+              const hasImage = m.content.startsWith(IMAGE_PREFIX)
+              return {
+                id: m.id,
+                role: m.role as 'user' | 'assistant',
+                content: hasImage ? m.content.slice(IMAGE_PREFIX.length) : m.content,
+                hadImage: hasImage || undefined,
+                createdAt: new Date(m.createdAt),
+              }
+            })
           }
         }
         setMessagesState(msgMap)
@@ -297,7 +303,10 @@ export default function AIPage() {
 
     // Guarda el mensaje del usuario en DB (crea la conversación si no existe)
     const fnId = activeFn
-    saveMessage(fnId, 'user', userMsg.content)
+    const savedContent = imageToSend
+      ? `[imagen adjunta] ${userMsg.content}`.trim()
+      : userMsg.content
+    saveMessage(fnId, 'user', savedContent)
 
     try {
       const clientContext = buildClientContext(clients)
@@ -564,12 +573,18 @@ export default function AIPage() {
                       }
                     >
                       {msg.role === 'user' && msg.image && (
-                      <img
-                        src={`data:${msg.image.mediaType};base64,${msg.image.data}`}
-                        alt="imagen adjunta"
-                        className="max-w-xs max-h-48 rounded-xl mb-2 object-cover"
-                      />
-                    )}
+                        <img
+                          src={`data:${msg.image.mediaType};base64,${msg.image.data}`}
+                          alt="imagen adjunta"
+                          className="max-w-xs max-h-48 rounded-xl mb-2 object-cover"
+                        />
+                      )}
+                      {msg.role === 'user' && !msg.image && msg.hadImage && (
+                        <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg text-xs" style={{ background: 'rgba(255,255,255,0.15)' }}>
+                          <ImageIcon size={11} />
+                          <span>Imagen enviada (no disponible en historial)</span>
+                        </div>
+                      )}
                     {msg.role === 'assistant' && msg.content === '' && loading ? (
                         <div className="flex items-center gap-1.5">
                           <div className="flex gap-1">
