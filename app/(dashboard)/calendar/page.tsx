@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Header } from '@/components/layout/header'
 import { Avatar } from '@/components/shared/avatar'
 import { NewEventModal } from '@/components/calendar/new-event-modal'
+import { NewTaskModal } from '@/components/tasks/new-task-modal'
 import { formatDateShort, formatDateTime, generateAvatarColor } from '@/lib/utils'
-import { ChevronLeft, ChevronRight, Plus, CalendarDays, Clock, Loader2, Pencil, Trash2, CheckSquare } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, CalendarDays, Clock, Loader2, Pencil, Trash2, CheckSquare, Circle, PlayCircle, CheckCircle2 } from 'lucide-react'
 import type { CalendarEvent, EventType, Client } from '@/types'
 
 const EVENT_CONFIG: Record<EventType, { color: string; label: string }> = {
@@ -18,6 +19,22 @@ const EVENT_CONFIG: Record<EventType, { color: string; label: string }> = {
   other:       { color: '#8B5CF6', label: 'Otro' },
 }
 
+const STATUS_CYCLE: Record<string, string> = {
+  backlog: 'todo',
+  todo: 'in_progress',
+  in_progress: 'done',
+  done: 'todo',
+  review: 'done',
+}
+
+const STATUS_CONFIG: Record<string, { label: string; color: string; Icon: any }> = {
+  todo:        { label: 'Por hacer',   color: '#6B7280', Icon: Circle },
+  backlog:     { label: 'Backlog',     color: '#6B7280', Icon: Circle },
+  in_progress: { label: 'En progreso', color: '#F59E0B', Icon: PlayCircle },
+  review:      { label: 'En revisión', color: '#3B82F6', Icon: PlayCircle },
+  done:        { label: 'Completado',  color: '#22C55E', Icon: CheckCircle2 },
+}
+
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const DAY_NAMES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
 
@@ -25,6 +42,9 @@ function getDaysInMonth(year: number, month: number) { return new Date(year, mon
 function getFirstDayOfMonth(year: number, month: number) { return new Date(year, month, 1).getDay() }
 function sameDay(a: Date, b: Date) {
   return a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()
+}
+function toDateStr(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 export default function CalendarPage() {
@@ -38,7 +58,12 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(today)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
+  const [editingTask, setEditingTask] = useState<any | null>(null)
+  // Drag & drop state
+  const [dragTaskId, setDragTaskId] = useState<string | null>(null)
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -52,7 +77,6 @@ export default function CalendarPage() {
     }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
-  // Apply client filter
   const filteredEvents = useMemo(() =>
     selectedClientId ? events.filter(e => (e as any).clientId === selectedClientId) : events,
     [events, selectedClientId]
@@ -96,6 +120,45 @@ export default function CalendarPage() {
     setEvents(prev => prev.filter(e => e.id !== event.id))
   }
 
+  // Task status cycle
+  const handleStatusCycle = async (task: any) => {
+    const nextStatus = STATUS_CYCLE[task.status] ?? 'todo'
+    await fetch(`/api/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: nextStatus }),
+    })
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: nextStatus } : t))
+  }
+
+  // Drag & drop handlers
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    setDragTaskId(taskId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const handleDragEnd = () => {
+    setDragTaskId(null)
+    setDragOverDate(null)
+  }
+  const handleDragOver = (e: React.DragEvent, dateStr: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverDate(dateStr)
+  }
+  const handleDrop = async (e: React.DragEvent, date: Date) => {
+    e.preventDefault()
+    setDragOverDate(null)
+    if (!dragTaskId) return
+    const dateStr = toDateStr(date)
+    await fetch(`/api/tasks/${dragTaskId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dueDate: dateStr }),
+    })
+    setTasks(prev => prev.map(t => t.id === dragTaskId ? { ...t, dueDate: new Date(dateStr + 'T12:00:00').toISOString() } : t))
+    setDragTaskId(null)
+  }
+
   const selectedClient = selectedClientId ? clients.find(c => c.id === selectedClientId) : null
 
   return (
@@ -112,7 +175,7 @@ export default function CalendarPage() {
         {/* Calendar grid */}
         <div className="flex-1 p-6 overflow-y-auto">
 
-          {/* Month nav + client filter row */}
+          {/* Month nav */}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold" style={{ color: 'var(--color-text)' }}>
               {MONTH_NAMES[currentMonth]} {currentYear}
@@ -195,20 +258,24 @@ export default function CalendarPage() {
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1
                   const date = new Date(currentYear, currentMonth, day)
+                  const dateStr = toDateStr(date)
                   const isToday = sameDay(date, today)
                   const isSelected = selectedDate ? sameDay(date, selectedDate) : false
+                  const isDragOver = dragOverDate === dateStr && !!dragTaskId
                   const { dayEvents, dayTasks } = itemsForDate(date)
                   const total = dayEvents.length + dayTasks.length
 
                   return (
-                    <motion.button
+                    <div
                       key={day}
                       onClick={() => setSelectedDate(date)}
-                      whileHover={{ scale: 1.01 }}
-                      className="h-24 p-2 rounded-lg text-left transition-all relative overflow-hidden"
+                      onDragOver={(e) => handleDragOver(e, dateStr)}
+                      onDragLeave={() => setDragOverDate(null)}
+                      onDrop={(e) => handleDrop(e, date)}
+                      className="h-24 p-2 rounded-lg text-left transition-all relative overflow-hidden cursor-pointer"
                       style={{
-                        background: isSelected ? 'rgba(111,43,250,0.12)' : 'var(--color-surface-2)',
-                        border: isSelected ? '1px solid rgba(111,43,250,0.25)' : isToday ? '1px solid rgba(111,43,250,0.4)' : '1px solid transparent',
+                        background: isDragOver ? 'rgba(111,43,250,0.18)' : isSelected ? 'rgba(111,43,250,0.12)' : 'var(--color-surface-2)',
+                        border: isDragOver ? '1.5px dashed rgba(111,43,250,0.6)' : isSelected ? '1px solid rgba(111,43,250,0.25)' : isToday ? '1px solid rgba(111,43,250,0.4)' : '1px solid transparent',
                       }}
                     >
                       <div className="flex items-center justify-between mb-1">
@@ -220,12 +287,27 @@ export default function CalendarPage() {
                         </span>
                       </div>
                       <div className="space-y-0.5">
-                        {dayTasks.slice(0, 1).map(task => (
-                          <div key={task.id} className="flex items-center gap-1 px-1 py-0.5 rounded text-[9px] truncate" style={{ background: 'rgba(111,43,250,0.15)', color: '#a78bfa' }}>
-                            <CheckSquare size={7} className="shrink-0" />
-                            <span className="truncate">{task.title}</span>
-                          </div>
-                        ))}
+                        {dayTasks.slice(0, 1).map(task => {
+                          const st = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.todo
+                          return (
+                            <div
+                              key={task.id}
+                              draggable
+                              onDragStart={(e) => { e.stopPropagation(); handleDragStart(e, task.id) }}
+                              onDragEnd={handleDragEnd}
+                              className="flex items-center gap-1 px-1 py-0.5 rounded text-[9px] truncate cursor-grab active:cursor-grabbing"
+                              style={{
+                                background: task.status === 'done' ? 'rgba(34,197,94,0.15)' : 'rgba(111,43,250,0.15)',
+                                color: task.status === 'done' ? '#4ade80' : '#a78bfa',
+                                opacity: dragTaskId === task.id ? 0.4 : 1,
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <CheckSquare size={7} className="shrink-0" />
+                              <span className="truncate">{task.title}</span>
+                            </div>
+                          )
+                        })}
                         {dayEvents.slice(0, dayTasks.length >= 1 ? 1 : 2).map(event => {
                           const cfg = EVENT_CONFIG[event.type as EventType] ?? EVENT_CONFIG.other
                           return (
@@ -239,7 +321,7 @@ export default function CalendarPage() {
                           <span className="text-[9px]" style={{ color: 'var(--color-text-muted)' }}>+{total - 2} más</span>
                         )}
                       </div>
-                    </motion.button>
+                    </div>
                   )
                 })}
               </div>
@@ -249,11 +331,22 @@ export default function CalendarPage() {
 
         {/* Sidebar */}
         <div className="w-72 shrink-0 overflow-y-auto p-4" style={{ borderLeft: '1px solid var(--color-border-subtle)' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <CalendarDays size={14} style={{ color: 'var(--color-primary)' }} />
-            <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
-              {selectedDate ? formatDateShort(selectedDate) : 'Eventos'}
-            </h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <CalendarDays size={14} style={{ color: 'var(--color-primary)' }} />
+              <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                {selectedDate ? formatDateShort(selectedDate) : 'Eventos'}
+              </h3>
+            </div>
+            {selectedDate && (
+              <button
+                onClick={() => setTaskModalOpen(true)}
+                className="text-[10px] px-2 py-1 rounded-lg font-medium"
+                style={{ background: 'rgba(111,43,250,0.12)', color: 'var(--color-primary)' }}
+              >
+                + Tarea
+              </button>
+            )}
           </div>
 
           {selectedTasks.length === 0 && selectedEvents.length === 0 ? (
@@ -266,19 +359,37 @@ export default function CalendarPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {selectedTasks.map(task => (
-                <div key={task.id} className="p-3 rounded-xl" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border-subtle)', borderLeft: '3px solid #6F2BFA' }}>
-                  <div className="flex items-start gap-2">
-                    <CheckSquare size={12} className="shrink-0 mt-0.5" style={{ color: '#a78bfa' }} />
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>{task.title}</p>
-                      {task.client && (
-                        <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--color-text-muted)' }}>{task.client.company}</p>
-                      )}
+              {selectedTasks.map(task => {
+                const st = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.todo
+                const StatusIcon = st.Icon
+                return (
+                  <div key={task.id} className="p-3 rounded-xl group" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border-subtle)', borderLeft: '3px solid #6F2BFA' }}>
+                    <div className="flex items-start gap-2">
+                      <button
+                        onClick={() => handleStatusCycle(task)}
+                        title={`Estado: ${st.label} — click para cambiar`}
+                        className="shrink-0 mt-0.5 transition-transform hover:scale-110"
+                      >
+                        <StatusIcon size={14} style={{ color: st.color }} />
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold" style={{ color: 'var(--color-text)', textDecoration: task.status === 'done' ? 'line-through' : 'none', opacity: task.status === 'done' ? 0.6 : 1 }}>{task.title}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {task.client && (
+                            <p className="text-[10px] truncate" style={{ color: 'var(--color-text-muted)' }}>{task.client.company}</p>
+                          )}
+                          <span className="text-[10px] font-medium" style={{ color: st.color }}>{st.label}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 shrink-0">
+                        <button onClick={() => setEditingTask(task)} className="w-5 h-5 rounded flex items-center justify-center" style={{ color: 'var(--color-text-muted)' }}>
+                          <Pencil size={10} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
 
               {selectedEvents.map(event => {
                 const cfg = EVENT_CONFIG[event.type as EventType] ?? EVENT_CONFIG.other
@@ -359,6 +470,18 @@ export default function CalendarPage() {
         event={editingEvent}
         onClose={() => setEditingEvent(null)}
         onUpdated={handleUpdated}
+      />
+      <NewTaskModal
+        open={taskModalOpen || !!editingTask}
+        task={editingTask}
+        defaultClientId={selectedClientId ?? undefined}
+        defaultDueDate={selectedDate ? toDateStr(selectedDate) : undefined}
+        onClose={() => { setTaskModalOpen(false); setEditingTask(null) }}
+        onSaved={() => {
+          fetch('/api/tasks').then(r => r.json()).then(data => {
+            if (Array.isArray(data)) setTasks(data.filter((t: any) => t.dueDate))
+          })
+        }}
       />
     </div>
   )

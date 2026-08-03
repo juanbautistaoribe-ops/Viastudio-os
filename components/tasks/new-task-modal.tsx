@@ -20,7 +20,7 @@ const STATUSES = [
   { value: 'done', label: 'Completado' },
 ]
 
-const EMPTY = { title: '', description: '', status: 'todo', priority: 'medium', dueDate: '' }
+const EMPTY = { title: '', description: '', status: 'todo', priority: 'medium', dueDate: '', clientId: '' }
 
 interface Props {
   open: boolean
@@ -35,7 +35,14 @@ export function NewTaskModal({ open, task, defaultClientId, defaultDueDate, onCl
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState(EMPTY)
+  const [clients, setClients] = useState<{ id: string; name: string; company: string }[]>([])
   const isEdit = !!task
+
+  useEffect(() => {
+    fetch('/api/clients').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setClients(data)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (open) {
@@ -46,13 +53,14 @@ export function NewTaskModal({ open, task, defaultClientId, defaultDueDate, onCl
           status: task.status ?? 'todo',
           priority: task.priority ?? 'medium',
           dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : '',
+          clientId: (task as any).clientId ?? '',
         })
       } else {
-        setForm({ ...EMPTY, dueDate: defaultDueDate ?? '' })
+        setForm({ ...EMPTY, dueDate: defaultDueDate ?? '', clientId: defaultClientId ?? '' })
       }
       setError('')
     }
-  }, [open, task])
+  }, [open, task, defaultClientId, defaultDueDate])
 
   function set(field: string, value: string) { setForm(f => ({ ...f, [field]: value })) }
 
@@ -68,7 +76,7 @@ export function NewTaskModal({ open, task, defaultClientId, defaultDueDate, onCl
         status: form.status,
         priority: form.priority,
         dueDate: form.dueDate || undefined,
-        clientId: defaultClientId ?? undefined,
+        clientId: form.clientId || undefined,
       }
       const res = isEdit && task
         ? await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -120,7 +128,17 @@ export function NewTaskModal({ open, task, defaultClientId, defaultDueDate, onCl
 
                 <div>
                   <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--color-text-muted)' }}>Descripción</label>
-                  <textarea className="input-base w-full resize-none" rows={3} placeholder="Descripción opcional…" value={form.description} onChange={e => set('description', e.target.value)} />
+                  <textarea className="input-base w-full resize-none" rows={2} placeholder="Descripción opcional…" value={form.description} onChange={e => set('description', e.target.value)} />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--color-text-muted)' }}>Cliente</label>
+                  <select className="input-base w-full" value={form.clientId} onChange={e => set('clientId', e.target.value)}>
+                    <option value="">Sin cliente</option>
+                    {clients.map(c => (
+                      <option key={c.id} value={c.id}>{c.company}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">

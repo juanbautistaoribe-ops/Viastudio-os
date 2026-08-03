@@ -7,9 +7,10 @@ import {
   Sparkles, Send, Plus, Loader2, Copy, Check,
   TrendingUp, FileText, MessageSquare, Zap, BarChart,
   List, PenLine, Users, Lightbulb, ChevronRight, CheckSquare,
-  ImageIcon, X
+  ImageIcon, X, Pencil, Trash2
 } from 'lucide-react'
 import type { AIFunction } from '@/types'
+import { NewTaskModal } from '@/components/tasks/new-task-modal'
 
 interface CreatedTask {
   id: string
@@ -180,6 +181,7 @@ export default function AIPage() {
   const [dbLoaded, setDbLoaded] = useState(false)
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [editingTask, setEditingTask] = useState<any | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -403,6 +405,16 @@ export default function AIPage() {
     setTimeout(() => setCopied(null), 2000)
   }
 
+  async function handleDeleteTask(msgId: string, taskId: string, fnId: string) {
+    if (!confirm('¿Eliminar esta tarea?')) return
+    await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
+    setMessages(fnId, prev => prev.map(m =>
+      m.id === msgId
+        ? { ...m, createdTasks: m.createdTasks?.filter(t => t.id !== taskId) }
+        : m
+    ))
+  }
+
   async function newConversation() {
     if (!activeFn) return
     // Borra la conversación actual en DB y crea una nueva al mandar el próximo mensaje
@@ -614,13 +626,13 @@ export default function AIPage() {
                         {msg.createdTasks.map((task) => (
                           <div
                             key={task.id}
-                            className="flex items-start gap-2.5 px-3 py-2 rounded-xl text-xs"
+                            className="flex items-start gap-2.5 px-3 py-2 rounded-xl text-xs group"
                             style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
                           >
                             <CheckSquare size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--color-success)' }} />
-                            <div>
+                            <div className="flex-1 min-w-0">
                               <p className="font-semibold" style={{ color: 'var(--color-text)' }}>
-                                ✓ Tarea creada: {task.title}
+                                {task.title}
                               </p>
                               <p style={{ color: 'var(--color-text-muted)' }}>
                                 {[
@@ -629,6 +641,24 @@ export default function AIPage() {
                                   task.dueDate ? `Vence ${new Date(task.dueDate).toLocaleDateString('es-AR')}` : null,
                                 ].filter(Boolean).join(' · ')}
                               </p>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 shrink-0">
+                              <button
+                                onClick={() => setEditingTask(task)}
+                                className="w-5 h-5 rounded flex items-center justify-center"
+                                title="Editar"
+                                style={{ color: 'var(--color-text-muted)' }}
+                              >
+                                <Pencil size={10} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTask(msg.id, task.id, activeFn!)}
+                                className="w-5 h-5 rounded flex items-center justify-center"
+                                title="Eliminar"
+                                style={{ color: '#EF4444' }}
+                              >
+                                <Trash2 size={10} />
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -763,6 +793,12 @@ export default function AIPage() {
           </div>
         </div>
       </div>
+      <NewTaskModal
+        open={!!editingTask}
+        task={editingTask}
+        onClose={() => setEditingTask(null)}
+        onSaved={() => setEditingTask(null)}
+      />
     </div>
   )
 }
