@@ -13,12 +13,19 @@ export default function TasksPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('kanban')
   const [search, setSearch] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
+  const [clientFilter, setClientFilter] = useState<string>('all')
   const [tasks, setTasks] = useState<Task[]>([])
+  const [clients, setClients] = useState<{ id: string; company: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
 
-  useEffect(() => { loadTasks() }, [])
+  useEffect(() => {
+    loadTasks()
+    fetch('/api/clients').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setClients(data.filter((c: any) => c.status === 'active'))
+    }).catch(() => {})
+  }, [])
 
   function loadTasks() {
     setLoading(true)
@@ -33,9 +40,10 @@ export default function TasksPage() {
     return tasks.filter((t) => {
       const matchSearch = !search || t.title.toLowerCase().includes(search.toLowerCase())
       const matchPriority = priorityFilter === 'all' || t.priority === priorityFilter
-      return matchSearch && matchPriority
+      const matchClient = clientFilter === 'all' || (t as any).clientId === clientFilter
+      return matchSearch && matchPriority && matchClient
     })
-  }, [tasks, search, priorityFilter])
+  }, [tasks, search, priorityFilter, clientFilter])
 
   const handleStatusChange = async (taskId: string, status: TaskStatus) => {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t))
@@ -90,6 +98,20 @@ export default function TasksPage() {
             </button>
           ))}
         </div>
+
+        {clients.length > 0 && (
+          <select
+            value={clientFilter}
+            onChange={e => setClientFilter(e.target.value)}
+            className="input-base py-1.5 text-xs pr-7"
+            style={{ minWidth: '130px' }}
+          >
+            <option value="all">Todos los clientes</option>
+            {clients.map(c => (
+              <option key={c.id} value={c.id}>{c.company}</option>
+            ))}
+          </select>
+        )}
 
         <div className="flex items-center rounded-lg p-0.5 gap-0.5" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border-subtle)' }}>
           <button onClick={() => setViewMode('kanban')} className="w-7 h-7 rounded-md flex items-center justify-center transition-all" style={{ background: viewMode === 'kanban' ? 'var(--color-primary)' : 'transparent', color: viewMode === 'kanban' ? 'white' : 'var(--color-text-muted)' }}>
