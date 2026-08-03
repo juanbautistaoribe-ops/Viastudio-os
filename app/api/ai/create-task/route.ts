@@ -17,8 +17,9 @@ REGLAS IMPORTANTES:
 3. SIEMPRE extraé la fecha del contexto o imagen y poné dueDate en formato ISO 8601 (ej: 2025-08-15). Si el calendario muestra días del mes, calculá la fecha completa usando el año y mes actual.
 4. Si la imagen muestra tareas para un cliente específico, asigná clientId a todas las tareas de ese cliente.
 5. Usá la herramienta create_task REPETIDAMENTE, una vez por cada tarea individual. No agrupés tareas.
-6. No respondas en texto hasta haber creado TODAS las tareas. Primero ejecutá todas las herramientas, después confirmá.
-7. Respondé siempre en español.`
+6. CRÍTICO: Jamás respondas con texto diciendo que "vas a crear" las tareas. Directamente llamá create_task sin anunciarlo. No digas "voy a hacerlo", "las creo ahora", ni nada similar — simplemente ejecutá la herramienta.
+7. No respondas en texto hasta haber creado TODAS las tareas. Primero ejecutá todas las herramientas, después confirmá.
+8. Respondé siempre en español.`
 
 export async function POST(req: NextRequest) {
   try {
@@ -90,6 +91,7 @@ export async function POST(req: NextRequest) {
     const createdTasks: any[] = []
     let textResponse = ''
     let maxRounds = 30
+    let isFirstCall = true
 
     while (maxRounds-- > 0) {
       const response = await anthropic.messages.create({
@@ -97,8 +99,12 @@ export async function POST(req: NextRequest) {
         max_tokens: 4096,
         system: fullSystem,
         tools,
+        // Force tool use on the first call to prevent Claude from responding with
+        // text like "I'll create them now" instead of actually calling create_task
+        tool_choice: isFirstCall ? { type: 'any' as const } : { type: 'auto' as const },
         messages: currentMessages,
       })
+      isFirstCall = false
 
       const textBlock = response.content.find(b => b.type === 'text')
       if (textBlock?.type === 'text') textResponse = textBlock.text
