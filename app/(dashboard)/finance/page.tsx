@@ -118,7 +118,7 @@ export default function FinancePage() {
   }, [period])
 
   useEffect(() => {
-    fetch('/api/crm').then(r => r.json()).then(data => {
+    fetch('/api/clients').then(r => r.json()).then(data => {
       if (Array.isArray(data)) setClients(data.map((c: any) => ({ id: c.id, name: c.name, company: c.company })))
     }).catch(() => {})
   }, [])
