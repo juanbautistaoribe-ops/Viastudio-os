@@ -69,6 +69,8 @@ model Client {
   events    CalendarEvent[]
   payments  Payment[]
   activities Activity[]
+  incomes   Income[]
+  expenses  Expense[]
 
   @@map("clients")
 }
@@ -409,4 +411,58 @@ enum ActivityType {
   DOC_CREATED
   COMMENT_ADDED
   PAYMENT_RECEIVED
+  INCOME_CREATED
+  EXPENSE_CREATED
+}
+
+// ─── Finance ─────────────────────────────────────────────────────────────────
+
+model Income {
+  id           String       @id @default(uuid())
+  clientId     String?      @map("client_id")
+  period       String       // "2024-01"
+  concept      String
+  amount       Float
+  currency     String       @default("ARS")
+  exchangeRate Float?       @map("exchange_rate")
+  status       IncomeStatus @default(INVOICED)
+  collectedAt  DateTime?    @map("collected_at")
+  notes        String?
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  client Client? @relation(fields: [clientId], references: [id])
+
+  @@map("incomes")
+}
+
+enum IncomeStatus {
+  INVOICED
+  COLLECTED
+  OVERDUE
+}
+
+model Expense {
+  id           String      @id @default(uuid())
+  date         DateTime
+  concept      String
+  category     String      @default("General")
+  type         ExpenseType
+  clientId     String?     @map("client_id")
+  amount       Float
+  currency     String      @default("ARS")
+  exchangeRate Float?      @map("exchange_rate")
+  recurring    Boolean     @default(false)
+  notes        String?
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  client Client? @relation(fields: [clientId], references: [id])
+
+  @@map("expenses")
+}
+
+enum ExpenseType {
+  DIRECT
+  FIXED
 }

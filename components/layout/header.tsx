@@ -14,6 +14,7 @@ const PAGE_TITLES: Record<string, { title: string; description: string }> = {
   '/leads': { title: 'Leads', description: 'Pipeline y oportunidades' },
   '/calendar': { title: 'Calendario', description: 'Agenda y eventos' },
   '/sops': { title: 'SOPs', description: 'Docs y procesos' },
+  '/finance': { title: 'Finanzas', description: 'Márgenes y rentabilidad' },
   '/ai': { title: 'Centro IA', description: 'Impulsado por Claude' },
   '/settings': { title: 'Configuración', description: 'Cuenta y preferencias' },
 }

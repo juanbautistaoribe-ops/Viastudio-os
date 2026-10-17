@@ -231,6 +231,8 @@ export type ActivityType =
   | 'doc_created'
   | 'comment_added'
   | 'payment_received'
+  | 'income_created'
+  | 'expense_created'
 
 export interface Activity {
   id: string
@@ -242,6 +244,67 @@ export interface Activity {
   entityId?: string
   entityType?: string
   createdAt: Date
+}
+
+// ─── Finance ─────────────────────────────────────────────────────────────────
+
+export type IncomeStatus = 'invoiced' | 'collected' | 'overdue'
+export type ExpenseType = 'direct' | 'fixed'
+
+export interface Income {
+  id: string
+  clientId?: string
+  client?: Pick<Client, 'id' | 'name' | 'company'>
+  period: string
+  concept: string
+  amount: number
+  currency: string
+  exchangeRate?: number
+  status: IncomeStatus
+  collectedAt?: Date
+  notes?: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface Expense {
+  id: string
+  date: Date
+  concept: string
+  category: string
+  type: ExpenseType
+  clientId?: string
+  client?: Pick<Client, 'id' | 'name' | 'company'>
+  amount: number
+  currency: string
+  exchangeRate?: number
+  recurring: boolean
+  notes?: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface FinanceSummary {
+  period: string
+  totalIncome: number
+  totalIncomeUSD: number
+  directCosts: number
+  directCostsUSD: number
+  grossMargin: number
+  grossMarginUSD: number
+  grossMarginPct: number
+  fixedCosts: number
+  fixedCostsUSD: number
+  operatingMargin: number
+  operatingMarginUSD: number
+  operatingMarginPct: number
+  franShare: number
+  franShareUSD: number
+  netMargin: number
+  netMarginUSD: number
+  netMarginPct: number
+  clientProfitability: { clientId: string; clientName: string; income: number; costs: number; margin: number }[]
+  receivables: { clientId: string; clientName: string; amount: number; currency: string; since: string }[]
 }
 
 // ─── Dashboard KPIs ──────────────────────────────────────────────────────────
