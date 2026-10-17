@@ -19,6 +19,8 @@ const ACTIVITY_ICONS: Record<ActivityType, { icon: LucideIcon; color: string }> 
   doc_created: { icon: FileText, color: '#8B5CF6' },
   comment_added: { icon: MessageSquare, color: '#06B6D4' },
   payment_received: { icon: DollarSign, color: '#22C55E' },
+  income_created: { icon: DollarSign, color: '#22C55E' },
+  expense_created: { icon: TrendingUp, color: '#EF4444' },
 }
 
 interface RecentActivityProps {

@@ -30,6 +30,8 @@ const ACTIVITY_COLORS: Record<ActivityType, string> = {
   doc_created:      '#EC4899',
   comment_added:    '#06B6D4',
   payment_received: '#22C55E',
+  income_created:   '#22C55E',
+  expense_created:  '#EF4444',
 }
 
 interface HeaderProps {
