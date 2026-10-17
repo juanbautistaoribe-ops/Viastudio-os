@@ -298,8 +298,8 @@ export interface FinanceSummary {
   operatingMargin: number
   operatingMarginUSD: number
   operatingMarginPct: number
-  franShare: number
-  franShareUSD: number
+  salaries: number
+  salariesUSD: number
   netMargin: number
   netMarginUSD: number
   netMarginPct: number

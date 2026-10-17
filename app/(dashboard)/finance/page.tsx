@@ -233,9 +233,9 @@ export default function FinancePage() {
                     <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{fmtARS(summary.fixedCosts)}</p>
                   </div>
                   <div className="card p-4">
-                    <p className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>Reparto Fran (50%)</p>
-                    <p className="text-base font-bold" style={{ color: 'var(--color-text)' }}>{fmtUSD(summary.franShareUSD)}</p>
-                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{fmtARS(summary.franShare)}</p>
+                    <p className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>Sueldos</p>
+                    <p className="text-base font-bold text-red-400">{fmtUSD(summary.salariesUSD)}</p>
+                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{fmtARS(summary.salaries)}</p>
                   </div>
                 </div>
 

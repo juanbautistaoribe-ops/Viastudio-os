@@ -26,7 +26,7 @@ const EMPTY = {
   notes: '',
 }
 
-const CATEGORIES = ['General', 'Herramientas', 'Freelance', 'Impuestos', 'Marketing', 'Infraestructura', 'Contador', 'Otro']
+const CATEGORIES = ['General', 'Sueldos', 'Herramientas', 'Freelance', 'Impuestos', 'Marketing', 'Infraestructura', 'Contador', 'Otro']
 
 export function ExpenseModal({ open, expense, clients, onClose, onSaved }: Props) {
   const [form, setForm] = useState({ ...EMPTY, date: new Date().toISOString().slice(0, 10) })

@@ -4,8 +4,6 @@ import { createClient } from '@/lib/supabase/server'
 
 export const maxDuration = 30
 
-const FRAN_SHARE = 0.5
-
 function toUSD(amount: number, currency: string, exchangeRate?: number | null): number {
   if (currency === 'USD') return amount
   if (!exchangeRate || exchangeRate === 0) return 0
@@ -40,22 +38,26 @@ export async function GET(req: NextRequest) {
   const totalIncome = incomes.reduce((s, i) => s + i.amount, 0)
   const totalIncomeUSD = incomes.reduce((s, i) => s + toUSD(i.amount, i.currency, i.exchangeRate), 0)
 
-  const directCosts = expenses.filter(e => e.type === 'DIRECT').reduce((s, e) => s + e.amount, 0)
-  const directCostsUSD = expenses.filter(e => e.type === 'DIRECT').reduce((s, e) => s + toUSD(e.amount, e.currency, e.exchangeRate), 0)
+  const directExpenses = expenses.filter(e => e.type === 'DIRECT')
+  const fixedExpenses = expenses.filter(e => e.type === 'FIXED' && e.category !== 'Sueldos')
+  const salaryExpenses = expenses.filter(e => e.type === 'FIXED' && e.category === 'Sueldos')
 
-  const fixedCosts = expenses.filter(e => e.type === 'FIXED').reduce((s, e) => s + e.amount, 0)
-  const fixedCostsUSD = expenses.filter(e => e.type === 'FIXED').reduce((s, e) => s + toUSD(e.amount, e.currency, e.exchangeRate), 0)
+  const directCosts = directExpenses.reduce((s, e) => s + e.amount, 0)
+  const directCostsUSD = directExpenses.reduce((s, e) => s + toUSD(e.amount, e.currency, e.exchangeRate), 0)
+
+  const fixedCosts = fixedExpenses.reduce((s, e) => s + e.amount, 0)
+  const fixedCostsUSD = fixedExpenses.reduce((s, e) => s + toUSD(e.amount, e.currency, e.exchangeRate), 0)
+
+  const salaries = salaryExpenses.reduce((s, e) => s + e.amount, 0)
+  const salariesUSD = salaryExpenses.reduce((s, e) => s + toUSD(e.amount, e.currency, e.exchangeRate), 0)
 
   const grossMarginUSD = totalIncomeUSD - directCostsUSD
   const operatingMarginUSD = grossMarginUSD - fixedCostsUSD
-  const franShareUSD = operatingMarginUSD * FRAN_SHARE
-  const netMarginUSD = operatingMarginUSD - franShareUSD
+  const netMarginUSD = operatingMarginUSD - salariesUSD
 
-  // Keep ARS totals for display (using raw ARS amounts)
   const grossMargin = totalIncome - directCosts
   const operatingMargin = grossMargin - fixedCosts
-  const franShare = operatingMargin * FRAN_SHARE
-  const netMargin = operatingMargin - franShare
+  const netMargin = operatingMargin - salaries
 
   // ── Rentabilidad por cliente ──────────────────────────────────────────────
   const clientMap = new Map<string, { clientName: string; income: number; costs: number }>()
@@ -111,8 +113,8 @@ export async function GET(req: NextRequest) {
     operatingMargin,
     operatingMarginUSD,
     operatingMarginPct: totalIncomeUSD > 0 ? (operatingMarginUSD / totalIncomeUSD) * 100 : 0,
-    franShare,
-    franShareUSD,
+    salaries,
+    salariesUSD,
     netMargin,
     netMarginUSD,
     netMarginPct: totalIncomeUSD > 0 ? (netMarginUSD / totalIncomeUSD) * 100 : 0,
