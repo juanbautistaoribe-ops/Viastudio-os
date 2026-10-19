@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import {
   Plus, ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
-  DollarSign, Pencil, Trash2, AlertCircle, RefreshCw,
+  DollarSign, Pencil, Trash2, AlertCircle, RefreshCw, Sheet,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { IncomeModal } from '@/components/finance/income-modal'
@@ -87,6 +87,7 @@ export default function FinancePage() {
   const [loadingSum, setLoadingSum] = useState(false)
   const [loadingInc, setLoadingInc] = useState(false)
   const [loadingExp, setLoadingExp] = useState(false)
+  const [exportingSheet, setExportingSheet] = useState(false)
 
   const [incomeModal, setIncomeModal] = useState(false)
   const [editIncome, setEditIncome] = useState<Income | null>(null)
@@ -131,6 +132,22 @@ export default function FinancePage() {
 
   function refresh() { loadSummary(); loadIncomes(); loadExpenses() }
 
+  async function exportToSheets() {
+    setExportingSheet(true)
+    try {
+      const r = await fetch('/api/integrations/google/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period }),
+      })
+      const data = await r.json()
+      if (data.url) window.open(data.url, '_blank')
+      else if (data.error === 'Google not connected') alert('Conectá Google Sheets primero en Configuración → Integraciones')
+    } finally {
+      setExportingSheet(false)
+    }
+  }
+
   async function deleteIncome(id: string) {
     if (!confirm('¿Eliminar este ingreso?')) return
     await fetch(`/api/finance/income/${id}`, { method: 'DELETE' })
@@ -157,6 +174,15 @@ export default function FinancePage() {
         style={{ background: 'var(--color-surface-3)', color: 'var(--color-text-2)', border: '1px solid var(--color-border-subtle)' }}
       >
         <Plus size={14} /> Gasto
+      </button>
+      <button
+        onClick={exportToSheets}
+        disabled={exportingSheet}
+        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors"
+        style={{ background: 'var(--color-surface-3)', color: 'var(--color-text-2)', border: '1px solid var(--color-border-subtle)' }}
+        title="Exportar a Google Sheets"
+      >
+        <Sheet size={14} />
       </button>
     </div>
   )

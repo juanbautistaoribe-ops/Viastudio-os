@@ -466,3 +466,17 @@ enum ExpenseType {
   DIRECT
   FIXED
 }
+
+model Integration {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  provider     String
+  accessToken  String    @map("access_token")
+  refreshToken String?   @map("refresh_token")
+  expiresAt    DateTime? @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([userId, provider])
+  @@map("integrations")
+}

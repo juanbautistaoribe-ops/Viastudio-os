@@ -18,13 +18,11 @@ const SETTINGS_SECTIONS = [
   { id: 'api', label: 'API Keys', icon: Key },
 ]
 
-const INTEGRATIONS = [
+const STATIC_INTEGRATIONS = [
   { id: 'claude', name: 'Claude API', description: 'Asistente IA para contenido y estrategia', status: 'connected', color: '#6F2BFA' },
   { id: 'supabase', name: 'Supabase', description: 'Base de datos y autenticación', status: 'connected', color: '#3ECF8E' },
-  { id: 'google', name: 'Google Calendar', description: 'Sincroniza reuniones y eventos', status: 'disconnected', color: '#4285F4' },
   { id: 'whatsapp', name: 'WhatsApp Business', description: 'Comunicación con clientes por WhatsApp', status: 'coming_soon', color: '#25D366' },
   { id: 'n8n', name: 'n8n Automations', description: 'Automatización de flujos de trabajo', status: 'coming_soon', color: '#FF6D5A' },
-  { id: 'slack', name: 'Slack', description: 'Notificaciones del equipo', status: 'disconnected', color: '#4A154B' },
 ]
 
 export default function SettingsPage() {
@@ -236,6 +234,37 @@ function ProfileSettings({ onSave, saved, saveError }: { onSave: (name: string) 
 }
 
 function IntegrationsSettings() {
+  const [googleConnected, setGoogleConnected] = useState(false)
+  const [loadingGoogle, setLoadingGoogle] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/integrations/google/status')
+      .then(r => r.json())
+      .then(d => setGoogleConnected(d.connected))
+      .catch(() => {})
+      .finally(() => setLoadingGoogle(false))
+  }, [])
+
+  function IntegrationRow({ name, description, color, status }: { name: string; description: string; color: string; status: 'connected' | 'coming_soon' }) {
+    return (
+      <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}18` }}>
+            <Zap size={16} style={{ color }} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>{name}</p>
+            <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{description}</p>
+          </div>
+        </div>
+        <div>
+          {status === 'connected' && <span className="badge badge-success">Conectado</span>}
+          {status === 'coming_soon' && <span className="badge badge-muted">Próximamente</span>}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div>
       <h2 className="text-base font-bold mb-2" style={{ color: 'var(--color-text)' }}>Integraciones</h2>
@@ -244,49 +273,36 @@ function IntegrationsSettings() {
       </p>
 
       <div className="space-y-3">
-        {INTEGRATIONS.map((integration) => (
-          <div
-            key={integration.id}
-            className="flex items-center justify-between p-4 rounded-xl"
-            style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border-subtle)',
-            }}
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background: `${integration.color}18` }}
-              >
-                <Zap size={16} style={{ color: integration.color }} />
-              </div>
-              <div>
-                <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
-                  {integration.name}
-                </p>
-                <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
-                  {integration.description}
-                </p>
-              </div>
+        {/* Google Sheets — real connection */}
+        <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#4285F418' }}>
+              <Zap size={16} style={{ color: '#4285F4' }} />
             </div>
-
-            <div className="flex items-center gap-2">
-              {integration.status === 'connected' && (
-                <span className="badge badge-success">Conectado</span>
-              )}
-              {integration.status === 'coming_soon' && (
-                <span className="badge badge-muted">Próximamente</span>
-              )}
-              {integration.status === 'disconnected' && (
-                <button
-                  className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium"
-                  style={{ background: 'var(--color-surface-3)', color: 'var(--color-text-2)' }}
-                >
-                  Conectar <ExternalLink size={10} />
-                </button>
-              )}
+            <div>
+              <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>Google Sheets</p>
+              <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>Exportá el resumen de Finanzas cada mes</p>
             </div>
           </div>
+          <div>
+            {loadingGoogle ? (
+              <Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-text-muted)' }} />
+            ) : googleConnected ? (
+              <span className="badge badge-success">Conectado</span>
+            ) : (
+              <a
+                href="/api/integrations/google/auth"
+                className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium"
+                style={{ background: 'var(--color-surface-3)', color: 'var(--color-text-2)' }}
+              >
+                Conectar <ExternalLink size={10} />
+              </a>
+            )}
+          </div>
+        </div>
+
+        {STATIC_INTEGRATIONS.map(i => (
+          <IntegrationRow key={i.id} name={i.name} description={i.description} color={i.color} status={i.status as 'connected' | 'coming_soon'} />
         ))}
       </div>
     </div>
