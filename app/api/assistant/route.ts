@@ -4,6 +4,7 @@ import { isWebhookAuthorized } from '@/lib/webhook-auth'
 import { logActivity } from '@/lib/activity'
 import { getDolarBlue } from '@/lib/dolar'
 import { botMetrics } from '@/lib/bot-metrics'
+import { buildPlan, createProduction, formatProposal, isLastBusinessDay, nextPeriod, periodOf, type Override } from '@/lib/production'
 
 export const maxDuration = 30
 
@@ -94,6 +95,20 @@ function leadOut(l: Awaited<ReturnType<typeof prisma.lead.findFirst>>) {
   }
 }
 
+function productionPeriod(b: Body) {
+  const p = str(b.period)
+  if (/^\d{4}-\d{2}$/.test(p)) return p
+  const now = new Date()
+  const day = Number(now.toLocaleDateString('en-CA', { timeZone: TZ }).slice(8, 10))
+  return day >= 20 ? nextPeriod(periodOf(now)) : periodOf(now)
+}
+
+function productionOptions(b: Body) {
+  const exclude = Array.isArray(b.exclude) ? b.exclude.map(str).filter(Boolean) : []
+  const overrides = Array.isArray(b.overrides) ? (b.overrides as Override[]).filter((o) => o && str(o.cliente)) : []
+  return { exclude, overrides }
+}
+
 const actions: Record<string, (b: Body) => Promise<unknown>> = {
   async summary() {
     const period = currentPeriod()
@@ -132,6 +147,41 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     const blue = await getDolarBlue()
     if (!blue) throw new Error('No pude obtener la cotización del dólar ahora')
     return { blue_venta: blue.venta, blue_compra: blue.compra, actualizado: blue.fecha }
+  },
+
+  // Monthly production. Default period: next month from the 20th on, otherwise the current one
+  async 'production.propose'(b) {
+    if (b.auto === true) {
+      // Daily 7:00 call: only on the last business day, and only if next month isn't loaded yet
+      if (!(await isLastBusinessDay())) return { mensaje: null }
+      const period = nextPeriod(periodOf(new Date()))
+      const plan = await buildPlan(period)
+      if (!plan.items.length) return { mensaje: null }
+      return { mensaje: formatProposal(plan) }
+    }
+    const plan = await buildPlan(productionPeriod(b), productionOptions(b))
+    return { periodo: plan.period, mensaje: formatProposal(plan), tareas: plan.items.reduce((a, i) => a + i.tasks.length, 0) }
+  },
+
+  async 'production.create'(b) {
+    const o = await owner()
+    if (!o) throw new Error('No hay perfil de usuario')
+    const plan = await buildPlan(productionPeriod(b), productionOptions(b))
+    const created = await createProduction(plan, o.id)
+    if (created) logActivity('TASK_CREATED', `Producción de ${plan.mes} cargada: ${created} tareas`, o.userId)
+    return { ok: true, periodo: plan.period, tareas_creadas: created, clientes: plan.items.map((i) => i.cliente), para_revisar: plan.warnings, sin_tareas_nuevas: plan.skipped }
+  },
+
+  async 'production.status'(b) {
+    const period = productionPeriod(b)
+    const tasks = await prisma.task.findMany({ where: { tags: { has: `prod-${period}` } }, include: { client: { select: { company: true } } } })
+    return {
+      periodo: period,
+      cargada: tasks.length > 0,
+      tareas: tasks.length,
+      hechas: tasks.filter((t) => t.status === 'DONE').length,
+      clientes: [...new Set(tasks.map((t) => t.client?.company).filter(Boolean))],
+    }
   },
 
   // Bot funnel per ad/service. Default: current month
@@ -212,7 +262,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   async 'clients.search'(b) {
     const q = str(b.q)
     const clients = await prisma.client.findMany({ orderBy: { company: 'asc' } })
-    const found = clients.filter((c) => !q || matches(q, c.name, c.company, c.industry, c.phone)).slice(0, 10)
+    const found = clients.filter((c) => !q || matches(q, c.name, c.company, c.industry, c.phone)).slice(0, q ? 10 : 50)
     return {
       total: found.length,
       clientes: found.map((c) => ({ id: c.id, nombre: c.name, negocio: c.company, rubro: c.industry, estado: c.status.toLowerCase(), valor_mensual: c.monthlyValue, moneda: c.currency })),
@@ -395,7 +445,10 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     parts.push(events.length
       ? `📅 Agenda\n${list(events, (e) => `${e.allDay ? 'Todo el día' : hora(e.startDate)} ${e.title}${e.location ? ` (${e.location})` : ''}`)}`
       : '📅 Sin reuniones agendadas.')
-    if (tasksToday.length) parts.push(`✅ Tareas de hoy\n${list(tasksToday, (t) => `${t.title}${t.dueDate ? ` (${hora(t.dueDate)})` : ''}`)}`)
+    const prodToday = tasksToday.filter((t) => t.tags.includes('produccion'))
+    const otherToday = tasksToday.filter((t) => !t.tags.includes('produccion'))
+    if (otherToday.length) parts.push(`✅ Tareas de hoy\n${list(otherToday, (t) => `${t.title}${t.dueDate ? ` (${hora(t.dueDate)})` : ''}`)}`)
+    if (prodToday.length) parts.push(`🎬 Entregas de producción de hoy (${prodToday.length})\n${list(prodToday, (t) => t.title, 12)}`)
     if (overdue.length) parts.push(`⚠️ Tareas vencidas\n${list(overdue, (t) => t.title, 5)}`)
     if (leads.length) {
       parts.push(`🔥 Leads para seguir\n${list(leads, (l) => `${l.name}${l.company && l.company !== l.name ? ` (${l.company})` : ''}: ${l.nextAction ?? 'seguimiento'}${l.potentialValue ? ` · ${money(l.potentialValue, l.currency)}` : ''}`, 6)}`)
@@ -446,7 +499,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     const to = new Date(base + REMINDER_MINUTES * 60 * 1000)
     const [events, tasks] = await Promise.all([
       prisma.calendarEvent.findMany({ where: { allDay: false, startDate: { gt: from, lte: to } }, orderBy: { startDate: 'asc' } }),
-      prisma.task.findMany({ where: { status: { notIn: ['DONE', 'CANCELLED'] }, dueDate: { gt: from, lte: to } }, orderBy: { dueDate: 'asc' } }),
+      prisma.task.findMany({ where: { status: { notIn: ['DONE', 'CANCELLED'] }, dueDate: { gt: from, lte: to }, NOT: { tags: { has: 'produccion' } } }, orderBy: { dueDate: 'asc' } }),
     ])
     const mensajes = [
       ...events.map((e) => [
