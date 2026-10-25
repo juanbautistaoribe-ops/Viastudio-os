@@ -135,13 +135,16 @@ export async function buildPlan(period: string, opts: PlanOptions = {}) {
     q === c.id || norm(c.company).includes(norm(q)) || norm(c.name).includes(norm(q))
   const excluded = (opts.exclude ?? []).filter(Boolean)
 
-  const items: { clientId: string; cliente: string; plan: string; deliverables: Deliverables; extras: Extras; tasks: { title: string; description: string; dueDate: Date }[] }[] = []
+  const items: { clientId: string; cliente: string; plan: string; deliverables: Deliverables; extras: Extras; hasta?: string; tasks: { title: string; description: string; dueDate: Date }[] }[] = []
   const warnings: string[] = []
   const skipped: string[] = []
 
   for (const c of clients) {
     if (excluded.some((q) => matchesName(q, c))) { skipped.push(`${c.company} (excluido)`); continue }
     if (already.has(c.id)) { skipped.push(`${c.company} (ya tiene la producción cargada)`); continue }
+    // Scheduled end: no production from that date on (mid-month ends keep the earlier weeks)
+    const clientDays = c.endDate ? days.filter((d) => d < c.endDate!) : days
+    if (!clientDays.length) { skipped.push(`${c.company} (baja desde el ${c.endDate!.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: 'numeric', month: 'numeric' })})`); continue }
 
     const override = (opts.overrides ?? []).find((o) => matchesName(o.cliente, c))
     let deliverables: Deliverables
@@ -174,9 +177,9 @@ export async function buildPlan(period: string, opts: PlanOptions = {}) {
       plan = `${plan}, ajustado`
     }
 
-    const weeks = days.length
+    const weeks = clientDays.length
     const perKind = Object.fromEntries((Object.keys(deliverables) as Kind[]).map((k) => [k, split(deliverables[k] ?? 0, weeks)])) as Record<Kind, number[]>
-    const tasks = days.flatMap((due, i) => {
+    const tasks = clientDays.flatMap((due, i) => {
       const week: Deliverables = Object.fromEntries((Object.keys(perKind) as Kind[]).filter((k) => perKind[k][i]).map((k) => [k, perKind[k][i]]))
       const out: { title: string; description: string; dueDate: Date }[] = []
       if (Object.keys(week).length) {
@@ -189,10 +192,13 @@ export async function buildPlan(period: string, opts: PlanOptions = {}) {
       if (extras.consultoria) out.push({ title: `${c.company} · Consultoría semanal`, description: `Reunión de consultoría de la semana ${i + 1}.`, dueDate: due })
       return out
     })
-    if (extras.metricas && days.length) {
-      tasks.push({ title: `${c.company} · Reporte de métricas de ${MESES[month]}`, description: 'Armar y enviar el reporte de métricas del mes.', dueDate: days[days.length - 1] })
+    if (extras.metricas && clientDays.length) {
+      tasks.push({ title: `${c.company} · Reporte de métricas de ${MESES[month]}`, description: 'Armar y enviar el reporte de métricas del mes.', dueDate: clientDays[clientDays.length - 1] })
     }
-    if (tasks.length) items.push({ clientId: c.id, cliente: c.company, plan, deliverables, extras, tasks })
+    const hasta = c.endDate && clientDays.length < days.length
+      ? `baja el ${c.endDate.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: 'numeric', month: 'numeric' })}: todo en ${clientDays.length} ${clientDays.length === 1 ? 'semana' : 'semanas'}`
+      : undefined
+    if (tasks.length) items.push({ clientId: c.id, cliente: c.company, plan, deliverables, extras, hasta, tasks })
   }
 
   const feriados = hol.filter((h) => h.fecha.startsWith(period))
@@ -209,7 +215,7 @@ export function formatProposal(plan: Awaited<ReturnType<typeof buildPlan>>) {
     '',
     ...plan.items.map((i) => {
       const extra = [i.extras.consultoria && 'consultoría semanal', i.extras.metricas && 'reporte de métricas'].filter(Boolean).join(' + ')
-      return `• ${i.cliente} (${i.plan}): ${[describe(i.deliverables), extra].filter(Boolean).join(' + ')}`
+      return `• ${i.cliente} (${i.plan}): ${[describe(i.deliverables), extra].filter(Boolean).join(' + ')}${i.hasta ? ` ⚠️ ${i.hasta}` : ''}`
     }),
   ]
   if (plan.warnings.length) lines.push('', '⚠️ Para revisar:', ...plan.warnings.map((w) => `• ${w}`))

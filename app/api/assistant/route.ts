@@ -265,7 +265,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     const found = clients.filter((c) => !q || matches(q, c.name, c.company, c.industry, c.phone)).slice(0, q ? 10 : 50)
     return {
       total: found.length,
-      clientes: found.map((c) => ({ id: c.id, nombre: c.name, negocio: c.company, rubro: c.industry, estado: c.status.toLowerCase(), valor_mensual: c.monthlyValue, moneda: c.currency })),
+      clientes: found.map((c) => ({ id: c.id, nombre: c.name, negocio: c.company, rubro: c.industry, estado: c.status.toLowerCase(), valor_mensual: c.monthlyValue, moneda: c.currency, plan: c.planType, detalle_plan: c.planNotes, baja_desde: c.endDate })),
     }
   },
 
@@ -276,15 +276,23 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     if (!client) throw new Error('Cliente no encontrado')
     const planType = str(b.planType).toLowerCase()
     if (planType && !['unico', 'personalizado'].includes(planType)) throw new Error('planType debe ser "unico" o "personalizado"')
+    // endDate: "YYYY-MM-DD" schedules the end (first day without service); cancelEnd clears it
+    const endDate = date(str(b.endDate) ? `${str(b.endDate).slice(0, 10)}T00:00:00-03:00` : '')
+    const endNote = endDate
+      ? `📅 Baja programada desde el ${endDate.toLocaleDateString('es-AR', { timeZone: TZ })}${str(b.reason) ? `: ${str(b.reason)}` : ''}`
+      : b.cancelEnd === true ? '📅 Baja programada cancelada' : ''
+    const notes = [str(b.notes), endNote].filter(Boolean).join('\n')
     const updated = await prisma.client.update({
       where: { id },
       data: {
+        ...(endDate && { endDate }),
+        ...(b.cancelEnd === true && { endDate: null }),
         ...(planType && { planType }),
         ...(str(b.planNotes) && { planNotes: str(b.planNotes) }),
-        ...(str(b.notes) && { notes: client.notes ? `${client.notes}\n\n${str(b.notes)}` : str(b.notes) }),
+        ...(notes && { notes: client.notes ? `${client.notes}\n\n${notes}` : notes }),
       },
     })
-    return { ok: true, cliente: { id: updated.id, negocio: updated.company, plan: updated.planType, detalle_plan: updated.planNotes } }
+    return { ok: true, cliente: { id: updated.id, negocio: updated.company, plan: updated.planType, detalle_plan: updated.planNotes, baja_desde: updated.endDate } }
   },
 
   async 'tasks.list'(b) {
@@ -455,6 +463,13 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
       prisma.income.findMany({ where: { period: currentPeriod(), status: { in: ['INVOICED', 'OVERDUE'] } } }),
       getDolarBlue(),
     ])
+    // Scheduled ends (bajas programadas): the client stops being active on its end date
+    const ended = await prisma.client.findMany({ where: { status: 'ACTIVE', endDate: { lte: new Date() } } })
+    if (ended.length) await prisma.client.updateMany({ where: { id: { in: ended.map((c) => c.id) } }, data: { status: 'CHURNED' } })
+    const upcomingEnds = await prisma.client.findMany({
+      where: { status: 'ACTIVE', endDate: { gt: new Date(), lte: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000) } },
+      orderBy: { endDate: 'asc' },
+    })
     const fecha = new Date().toLocaleDateString('es-AR', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
     const list = <T,>(items: T[], f: (x: T) => string, max = 8) =>
       [...items.slice(0, max).map((x) => `• ${f(x)}`), ...(items.length > max ? [`• y ${items.length - max} más`] : [])].join('\n')
@@ -477,6 +492,8 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
       const totals = [ars && money(ars, 'ARS'), usd && money(usd, 'USD')].filter(Boolean).join(' + ')
       parts.push(`💰 Pendiente de cobro este mes: ${pending.length} ${pending.length === 1 ? 'ingreso' : 'ingresos'} (${totals}).`)
     }
+    if (ended.length) parts.push(`👋 Desde hoy ${ended.length === 1 ? 'deja' : 'dejan'} de ser ${ended.length === 1 ? 'cliente' : 'clientes'} (baja programada): ${ended.map((c) => c.company).join(', ')}. ${ended.length === 1 ? 'Lo pasé' : 'Los pasé'} a Perdido en el CRM.`)
+    if (upcomingEnds.length) parts.push(`📅 Bajas próximas: ${upcomingEnds.map((c) => `${c.company} (${c.endDate!.toLocaleDateString('es-AR', { timeZone: TZ, day: 'numeric', month: 'numeric' })})`).join(', ')}`)
     if (blue) parts.push(`💵 Dólar blue: ${money(blue.venta, 'ARS')}`)
     if (!events.length && !tasksToday.length && !overdue.length && !leads.length) parts.push('Día libre de pendientes. Si querés agendar algo, decímelo. 🙌')
     return { mensaje: parts.join('\n\n') }
