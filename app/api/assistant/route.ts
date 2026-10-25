@@ -4,7 +4,7 @@ import { isWebhookAuthorized } from '@/lib/webhook-auth'
 import { logActivity } from '@/lib/activity'
 import { getDolarBlue } from '@/lib/dolar'
 import { botMetrics } from '@/lib/bot-metrics'
-import { buildItems, createProposal, proposalSummary, proposalUrl, writeCopy, type ServiceInput } from '@/lib/proposals'
+import { buildItems, createProposal, dueFollowups, followupMessage, notifyJuanba, proposalMessage, proposalSummary, proposalUrl, sendToLead, writeCopy, type ServiceInput } from '@/lib/proposals'
 import { buildPlan, createProduction, formatProposal, isLastBusinessDay, nextPeriod, periodOf, type Override } from '@/lib/production'
 
 export const maxDuration = 30
@@ -183,12 +183,40 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
         ...(str(b.plazo) && { timeline: str(b.plazo) }),
         ...(str(b.formaDePago) && { paymentTerms: str(b.formaDePago) }),
         ...(validezDias && { validUntil: new Date(Date.now() + validezDias * 24 * 60 * 60 * 1000) }),
+        ...(b.stopFollowups === true && { stopFollowups: true }),
       },
     })
     return { ok: true, id: updated.id, ...proposalSummary(updated) }
   },
 
   // Juanba sent the link to the lead: views count from now on and the lead moves to "proposal"
+  // The bot sends the proposal link to the lead's WhatsApp (Juanba confirms the message first)
+  async 'proposals.send'(b) {
+    const proposal = await prisma.proposal.findUnique({ where: { id: str(b.id) } })
+    if (!proposal) throw new Error('Propuesta no encontrada')
+    const lead = proposal.leadId ? await prisma.lead.findUnique({ where: { id: proposal.leadId } }) : null
+    const phone = str(b.telefono).replace(/\D/g, '') || lead?.phone
+    if (!phone) throw new Error('No tengo el teléfono del lead: pasame el número')
+    const chatId = `${phone}@c.us`
+    const message = str(b.mensaje) || proposalMessage(proposal)
+    await sendToLead(chatId, message)
+    await prisma.proposal.update({ where: { id: proposal.id }, data: { sentToChat: chatId } })
+    return actions['proposals.mark_sent']({ id: proposal.id, enviadoPorBot: true })
+  },
+
+  // Called every 30 min by n8n: proposal follow-ups that are due (Mon–Sat, 9 to 21)
+  async 'proposals.followups'() {
+    const local = new Date(new Date().toLocaleString('en-US', { timeZone: TZ }))
+    if (local.getDay() === 0 || local.getHours() < 9 || local.getHours() >= 21) return { enviados: 0 }
+    const due = await dueFollowups()
+    for (const p of due) {
+      await sendToLead(p.sentToChat!, followupMessage(p))
+      await prisma.proposal.update({ where: { id: p.id }, data: { followups: { increment: 1 }, lastFollowupAt: new Date() } })
+      await notifyJuanba(`📨 Le hice seguimiento (${p.followups + 1}/2) a la propuesta de ${p.clientName}${p.business ? ` (${p.business})` : ''}. ${p.viewCount > 0 ? `La abrió ${p.viewCount} ${p.viewCount === 1 ? 'vez' : 'veces'}.` : 'Todavía no la abrió.'}`)
+    }
+    return { enviados: due.length }
+  },
+
   async 'proposals.mark_sent'(b) {
     const proposal = await prisma.proposal.update({ where: { id: str(b.id) }, data: { status: 'enviada', sentAt: new Date() } })
     if (proposal.leadId) {

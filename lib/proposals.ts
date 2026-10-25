@@ -34,17 +34,72 @@ export function buildItems(inputs: ServiceInput[]): ProposalItem[] {
   })
 }
 
-// WhatsApp message to Juanba through the n8n notify webhook; never blocks the caller
+// WhatsApp messages go out through the n8n notify webhook (it holds the Green API credentials).
+// Without chatId the message goes to Juanba; with chatId, the bot sends it to that lead.
+async function sendWhatsApp(message: string, chatId?: string) {
+  const res = await fetch(NOTIFY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-webhook-secret': process.env.LEADS_WEBHOOK_SECRET ?? '' },
+    body: JSON.stringify({ message, ...(chatId && { chatId }) }),
+  })
+  if (!res.ok) throw new Error(`n8n respondió ${res.status}`)
+}
+
+// Never blocks the caller
 export async function notifyJuanba(message: string) {
   try {
-    await fetch(NOTIFY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': process.env.LEADS_WEBHOOK_SECRET ?? '' },
-      body: JSON.stringify({ message }),
-    })
+    await sendWhatsApp(message)
   } catch (error) {
     console.error('notifyJuanba', error)
   }
+}
+
+export async function sendToLead(chatId: string, message: string) {
+  await sendWhatsApp(message, chatId)
+}
+
+const firstName = (name: string) => name.trim().split(/\s+/)[0]
+const shortDate = (d: Date) => d.toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: 'numeric', month: 'numeric' })
+
+export function proposalMessage(p: { clientName: string; business: string | null; slug: string }) {
+  return [
+    `¡Hola ${firstName(p.clientName)}! 👋 Te paso la propuesta que preparó Juanba${p.business ? ` para ${p.business}` : ''}:`,
+    proposalUrl(p.slug),
+    'Ahí vas a ver todo el detalle. Si te cierra, tocá "Quiero avanzar"; si tenés alguna duda, desde la misma página le podés escribir directo a Juanba.',
+  ].join('\n\n')
+}
+
+const FOLLOWUP_HOURS = [48, 72] // 1st two days after sending, 2nd three days after the 1st
+
+export function followupMessage(p: { clientName: string; slug: string; viewCount: number; validUntil: Date | null; followups: number }) {
+  const name = firstName(p.clientName)
+  const url = proposalUrl(p.slug)
+  if (p.followups === 0) {
+    return p.viewCount > 0
+      ? `¡Hola ${name}! ¿Pudiste ver la propuesta? Si te quedó alguna duda, desde la página le podés escribir directo a Juanba 😊\n${url}`
+      : `¡Hola ${name}! Te dejo de nuevo la propuesta por si se te pasó:\n${url}\nCuando la mires, contame qué te pareció.`
+  }
+  return `¡Hola ${name}! Te recuerdo que la propuesta${p.validUntil ? ` vale hasta el ${shortDate(p.validUntil)}` : ' sigue disponible'}. Si querés avanzar o ajustar algo, escribile a Juanba desde la página 🙌\n${url}`
+}
+
+// Proposals sent by the bot whose follow-up is due. Stops for good when the lead accepted, tapped
+// "Tengo una consulta", replied in the bot chat, Juanba stopped it, or the proposal expired.
+export async function dueFollowups(now = new Date()) {
+  const proposals = await prisma.proposal.findMany({
+    where: { status: { in: ['enviada', 'vista'] }, sentToChat: { not: null }, stopFollowups: false, contactClickedAt: null, followups: { lt: FOLLOWUP_HOURS.length } },
+  })
+  const due: typeof proposals = []
+  for (const p of proposals) {
+    if (p.validUntil && p.validUntil < now) continue
+    const conv = await prisma.botConversation.findUnique({ where: { chatId: p.sentToChat! } })
+    if (conv && p.sentAt && conv.lastMessageAt > p.sentAt) {
+      await prisma.proposal.update({ where: { id: p.id }, data: { stopFollowups: true } })
+      continue
+    }
+    const since = (p.lastFollowupAt ?? p.sentAt ?? p.createdAt).getTime()
+    if (now.getTime() - since >= FOLLOWUP_HOURS[p.followups] * 60 * 60 * 1000) due.push(p)
+  }
+  return due
 }
 
 type Copy = { titulo: string; diagnostico: string; solucion: string }

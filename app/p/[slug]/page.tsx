@@ -10,7 +10,6 @@ import { AcceptProposal } from './accept'
 
 export const dynamic = 'force-dynamic'
 
-const JUANBA_WA = '5493482323255'
 const BOT_UA = /whatsapp|facebookexternalhit|bot|crawler|spider|preview|slack|telegram|discord/i
 
 async function load(slug: string) {
@@ -48,7 +47,6 @@ export default async function ProposalPage({ params }: { params: Promise<{ slug:
   const items = (proposal.items as ProposalItem[]) ?? []
   const expired = !!proposal.validUntil && proposal.validUntil < new Date() && proposal.status !== 'aceptada'
   const rate = proposal.exchangeRate
-  const waText = encodeURIComponent(`Hola Juanba! Tengo una consulta sobre la propuesta para ${proposal.business || proposal.clientName}.`)
 
   return (
     <main className="min-h-full px-4 py-10" style={{ background: 'var(--color-bg)', color: 'var(--color-text)' }}>
@@ -142,7 +140,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ slug:
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             {!expired && <AcceptProposal slug={proposal.slug} accepted={proposal.status === 'aceptada'} />}
             <a
-              href={`https://wa.me/${JUANBA_WA}?text=${waText}`}
+              href={`/api/proposals/${proposal.slug}/contact`}
               className="flex-1 rounded-xl px-4 py-3 text-center text-sm font-medium"
               style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
             >

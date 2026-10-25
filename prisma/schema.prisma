@@ -522,6 +522,11 @@ model Proposal {
   sentAt        DateTime? @map("sent_at")
   firstViewedAt DateTime? @map("first_viewed_at")
   acceptedAt    DateTime? @map("accepted_at")
+  sentToChat       String?   @map("sent_to_chat") // WhatsApp chat the bot sent it to
+  followups        Int       @default(0)
+  lastFollowupAt   DateTime? @map("last_followup_at")
+  contactClickedAt DateTime? @map("contact_clicked_at") // lead tapped "Tengo una consulta"
+  stopFollowups    Boolean   @default(false) @map("stop_followups")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
