@@ -11,6 +11,8 @@ export const MOCK_STATS: DashboardStats = {
   criticalTasks: 3,
   activeLeads: 8,
   leadsValue: 47000,
+  leadsValueARS: 0,
+  leadsValueUSD: 47000,
   leadsValueGrowth: 22,
   upcomingEvents: 5,
   tasksCompletedThisWeek: 18,
