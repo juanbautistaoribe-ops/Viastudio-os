@@ -77,6 +77,32 @@ export default function CalendarPage() {
     }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
+  // Events and tasks also arrive from the WhatsApp assistant: refresh in the background
+  // while the page is visible and nothing is being dragged or edited
+  const busyRef = useRef(false)
+  useEffect(() => {
+    busyRef.current = !!dragTaskId || modalOpen || taskModalOpen
+  }, [dragTaskId, modalOpen, taskModalOpen])
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || busyRef.current) return
+      Promise.all([
+        fetch('/api/events').then(r => (r.ok ? r.json() : null)),
+        fetch('/api/tasks').then(r => (r.ok ? r.json() : null)),
+      ]).then(([eventsData, tasksData]) => {
+        if (Array.isArray(eventsData)) setEvents(eventsData)
+        if (Array.isArray(tasksData)) setTasks(tasksData.filter((t: { dueDate?: string | null }) => t.dueDate))
+      }).catch(() => {})
+    }
+    const interval = setInterval(refresh, 20_000)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [])
+
   const filteredEvents = useMemo(() =>
     selectedClientId ? events.filter(e => (e as any).clientId === selectedClientId) : events,
     [events, selectedClientId]

@@ -23,9 +23,13 @@ function num(value: unknown) {
   return Number.isFinite(n) ? n : null
 }
 
+// Dates from the agent: without a timezone they are Argentina time (the server runs in UTC);
+// a bare day means 10:00
 function date(value: unknown) {
-  const s = str(value)
+  let s = str(value)
   if (!s) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) s = `${s}T10:00:00-03:00`
+  else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) s = `${s}-03:00`
   const d = new Date(s)
   return Number.isNaN(d.getTime()) ? null : d
 }
