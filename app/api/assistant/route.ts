@@ -96,6 +96,16 @@ function leadOut(l: Awaited<ReturnType<typeof prisma.lead.findFirst>>) {
   }
 }
 
+async function findProposal(b: Body) {
+  const id = str(b.id)
+  const slug = str(b.slug) || (str(b.link).match(/\/p\/([A-Za-z0-9_-]+)/)?.[1] ?? '') || (id.match(/\/p\/([A-Za-z0-9_-]+)/)?.[1] ?? '')
+  const proposal = slug
+    ? await prisma.proposal.findUnique({ where: { slug } })
+    : id ? await prisma.proposal.findUnique({ where: { id } }) ?? await prisma.proposal.findUnique({ where: { slug: id } }) : null
+  if (!proposal) throw new Error('Propuesta no encontrada: pasame el link de la propuesta')
+  return proposal
+}
+
 function productionPeriod(b: Body) {
   const p = str(b.period)
   if (/^\d{4}-\d{2}$/.test(p)) return p
@@ -166,8 +176,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   async 'proposals.update'(b) {
-    const existing = await prisma.proposal.findUnique({ where: { id: str(b.id) } })
-    if (!existing) throw new Error('Propuesta no encontrada')
+    const existing = await findProposal(b)
     const items = Array.isArray(b.servicios) && b.servicios.length ? buildItems(b.servicios as ServiceInput[]) : null
     const regenerate = b.regenerar === true || !!items || !!str(b.notas)
     const lead = existing.leadId ? await prisma.lead.findUnique({ where: { id: existing.leadId } }) : null
@@ -192,8 +201,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   // Juanba sent the link to the lead: views count from now on and the lead moves to "proposal"
   // The bot sends the proposal link to the lead's WhatsApp (Juanba confirms the message first)
   async 'proposals.send'(b) {
-    const proposal = await prisma.proposal.findUnique({ where: { id: str(b.id) } })
-    if (!proposal) throw new Error('Propuesta no encontrada')
+    const proposal = await findProposal(b)
     const lead = proposal.leadId ? await prisma.lead.findUnique({ where: { id: proposal.leadId } }) : null
     const phone = str(b.telefono).replace(/\D/g, '') || lead?.phone
     if (!phone) throw new Error('No tengo el teléfono del lead: pasame el número')
@@ -218,7 +226,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   async 'proposals.mark_sent'(b) {
-    const proposal = await prisma.proposal.update({ where: { id: str(b.id) }, data: { status: 'enviada', sentAt: new Date() } })
+    const proposal = await prisma.proposal.update({ where: { id: (await findProposal(b)).id }, data: { status: 'enviada', sentAt: new Date() } })
     if (proposal.leadId) {
       const lead = await prisma.lead.findUnique({ where: { id: proposal.leadId } })
       if (lead && ['NEW', 'CONTACTED', 'QUALIFIED'].includes(lead.status)) {
@@ -233,8 +241,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   async 'proposals.delete'(b) {
-    const proposal = await prisma.proposal.delete({ where: { id: str(b.id) } }).catch(() => null)
-    if (!proposal) throw new Error('Propuesta no encontrada')
+    const proposal = await prisma.proposal.delete({ where: { id: (await findProposal(b)).id } })
     return { ok: true, eliminada: `${proposal.clientName}${proposal.business ? ` (${proposal.business})` : ''}` }
   },
 

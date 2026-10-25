@@ -178,6 +178,15 @@ export async function createProposal(input: {
   if (!input.servicios?.length) throw new Error('Falta al menos un servicio')
 
   const items = buildItems(input.servicios)
+
+  // The assistant may re-run "create" when Juanba confirms: reuse a draft from the last 30 min
+  const recent = await prisma.proposal.findFirst({
+    where: { clientName: nombre, status: 'borrador', createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) } },
+    orderBy: { createdAt: 'desc' },
+  })
+  const sameServices = (p: { items: unknown }) => JSON.stringify((p.items as ProposalItem[]).map((i) => i.key).sort()) === JSON.stringify(items.map((i) => i.key).sort())
+  if (recent && sameServices(recent)) return recent
+
   const blue = items.some((i) => i.moneda === 'USD') ? (await getDolarBlue())?.venta ?? null : null
   const copy = await writeCopy({ nombre, negocio, contexto: lead?.notes?.slice(-1500) ?? '', items, notas: input.notas })
 
