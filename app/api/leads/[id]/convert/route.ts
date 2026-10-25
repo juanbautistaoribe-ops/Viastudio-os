@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { logActivity } from '@/lib/activity'
+import { startOnboarding } from '@/lib/onboarding'
 
 export async function POST(
   _req: NextRequest,
@@ -45,6 +46,8 @@ export async function POST(
       entityType: 'lead',
       clientId: client.id,
     })
+
+    await startOnboarding(id, client.id).catch((e) => console.error('onboarding', e))
 
     return NextResponse.json({ client, leadId: id })
   } catch (error) {

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { isWebhookAuthorized } from '@/lib/webhook-auth'
 import { logActivity } from '@/lib/activity'
 import { getDolarBlue } from '@/lib/dolar'
+import { onboardingDraft, startOnboarding } from '@/lib/onboarding'
 import { botMetrics } from '@/lib/bot-metrics'
 import { buildItems, createProposal, dueFollowups, followupMessage, notifyJuanba, proposalMessage, proposalSummary, proposalUrl, sendToLead, writeCopy, type ServiceInput } from '@/lib/proposals'
 import { buildPlan, createProduction, formatProposal, isLastBusinessDay, nextPeriod, periodOf, type Override } from '@/lib/production'
@@ -328,8 +329,9 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     })
     const o = await owner()
     if (o && status === 'WON') logActivity('LEAD_WON', `Lead ganado: ${updated.company}`, o.userId, { entityId: id, entityType: 'lead' })
+    const onboarding = status === 'WON' ? await startOnboarding(id).catch(() => null) : null
     if (o && status === 'LOST') logActivity('LEAD_LOST', `Lead perdido: ${updated.company}`, o.userId, { entityId: id, entityType: 'lead' })
-    return { ok: true, lead: leadOut(updated) }
+    return { ok: true, lead: leadOut(updated), ...(onboarding?.created && { onboarding: `${onboarding.created} tareas de arranque creadas; le avisé a Juanba con el borrador de bienvenida` }) }
   },
 
   async 'leads.convert'(b) {
@@ -359,7 +361,30 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     ])
     const o = await owner()
     if (o) logActivity('LEAD_WON', `Lead convertido a cliente: ${lead.company}`, o.userId, { entityId: id, entityType: 'lead', clientId: client.id })
+    await startOnboarding(id, client.id).catch(() => null)
     return { ok: true, cliente: { id: client.id, nombre: client.name, negocio: client.company, valor_mensual: client.monthlyValue, moneda: client.currency } }
+  },
+
+  // Welcome message for a new client: Juanba approves the text, then the bot sends it
+  async 'onboarding.preview'(b) {
+    const { lead, services, mensaje } = await onboardingDraft(str(b.leadId))
+    return { lead: lead.name, telefono: lead.phone, servicios: services, mensaje }
+  },
+
+  async 'onboarding.send'(b) {
+    const { lead, mensaje } = await onboardingDraft(str(b.leadId))
+    if (!lead.phone) throw new Error('El lead no tiene teléfono cargado')
+    const text = str(b.mensaje) || mensaje
+    await sendToLead(`${lead.phone}@c.us`, text)
+    const today = new Date().toLocaleDateString('es-AR', { timeZone: TZ })
+    await prisma.lead.update({ where: { id: lead.id }, data: { notes: `${lead.notes ?? ''}\n\n👋 ${today}: bienvenida enviada por el bot`.trim() } })
+    return { ok: true, enviado_a: lead.name }
+  },
+
+  // Manual start (e.g. a client closed outside the pipeline); does nothing if it already ran
+  async 'onboarding.start'(b) {
+    const result = await startOnboarding(str(b.leadId), str(b.clientId) || null)
+    return result.already ? { ok: true, aviso: 'El onboarding de este lead ya estaba creado' } : { ok: true, tareas_creadas: result.created }
   },
 
   async 'clients.search'(b) {
