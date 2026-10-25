@@ -97,6 +97,65 @@ function leadOut(l: Awaited<ReturnType<typeof prisma.lead.findFirst>>) {
   }
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function pickOne<T>(found: T[], label: string, describe: (x: T) => string, q: string): T {
+  if (found.length === 1) return found[0]
+  if (!found.length) throw new Error(`No encontré ${label} "${q}"`)
+  throw new Error(`Hay ${found.length} ${label}s que coinciden con "${q}": ${found.slice(0, 5).map(describe).join(' / ')}. Preguntale a Juanba cuál.`)
+}
+
+// Lead by id, or by name/business/phone (open leads first)
+async function findLead(b: Body, key = 'id') {
+  const id = str(b[key]) || str(b.leadId) || str(b.id)
+  if (UUID.test(id)) {
+    const lead = await prisma.lead.findUnique({ where: { id } })
+    if (lead) return lead
+  }
+  const q = str(b.q) || str(b.nombre) || str(b.lead) || (UUID.test(id) ? '' : id)
+  if (!q) throw new Error('Decime de qué lead se trata (nombre o negocio)')
+  const leads = await prisma.lead.findMany({ orderBy: { updatedAt: 'desc' }, take: 300 })
+  const hits = leads.filter((l) => matches(q, l.name, l.company, l.phone))
+  const open = hits.filter((l) => !['WON', 'LOST'].includes(l.status))
+  return pickOne(open.length ? open : hits, 'lead', (l) => `${l.name} (${l.company}, ${l.status.toLowerCase()})`, q)
+}
+
+async function findClient(b: Body) {
+  const id = str(b.id) || str(b.clientId)
+  if (UUID.test(id)) {
+    const client = await prisma.client.findUnique({ where: { id } })
+    if (client) return client
+  }
+  const q = str(b.q) || str(b.nombre) || str(b.cliente) || (UUID.test(id) ? '' : id)
+  if (!q) throw new Error('Decime de qué cliente se trata')
+  const clients = await prisma.client.findMany()
+  return pickOne(clients.filter((c) => matches(q, c.name, c.company)), 'cliente', (c) => `${c.company} (${c.name})`, q)
+}
+
+async function findTask(b: Body) {
+  const id = str(b.id)
+  if (UUID.test(id)) {
+    const task = await prisma.task.findUnique({ where: { id } })
+    if (task) return task
+  }
+  const q = str(b.q) || str(b.titulo) || str(b.title) || (UUID.test(id) ? '' : id)
+  if (!q) throw new Error('Decime qué tarea')
+  const tasks = await prisma.task.findMany({ where: { status: { notIn: ['DONE', 'CANCELLED'] } }, take: 200 })
+  return pickOne(tasks.filter((t) => matches(q, t.title)), 'tarea', (t) => t.title, q)
+}
+
+async function findEvent(b: Body) {
+  const id = str(b.id)
+  if (UUID.test(id)) {
+    const event = await prisma.calendarEvent.findUnique({ where: { id } })
+    if (event) return event
+  }
+  const q = str(b.q) || str(b.titulo) || (UUID.test(id) ? '' : id)
+  if (!q) throw new Error('Decime qué evento')
+  const events = await prisma.calendarEvent.findMany({ where: { startDate: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }, orderBy: { startDate: 'asc' }, take: 100 })
+  return pickOne(events.filter((e) => matches(q, e.title, e.location)), 'evento', (e) => `${e.title} (${hora(e.startDate)})`, q)
+}
+
 async function findProposal(b: Body) {
   const id = str(b.id)
   const slug = str(b.slug) || (str(b.link).match(/\/p\/([A-Za-z0-9_-]+)/)?.[1] ?? '') || (id.match(/\/p\/([A-Za-z0-9_-]+)/)?.[1] ?? '')
@@ -164,7 +223,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   // Commercial proposals with a public link. Created as draft; Juanba reviews it and sends the link himself
   async 'proposals.create'(b) {
     const proposal = await createProposal({
-      leadId: str(b.leadId) || undefined,
+      leadId: str(b.leadId) || str(b.lead) ? (await findLead(b, 'leadId')).id : undefined,
       nombre: str(b.nombre) || undefined,
       negocio: str(b.negocio) || undefined,
       servicios: (Array.isArray(b.servicios) ? b.servicios : []) as ServiceInput[],
@@ -308,9 +367,8 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   async 'leads.update'(b) {
-    const id = str(b.id)
-    const lead = await prisma.lead.findUnique({ where: { id } })
-    if (!lead) throw new Error('Lead no encontrado')
+    const lead = await findLead(b)
+    const id = lead.id
     const status = str(b.status).toUpperCase()
     if (status && !LEAD_STATUS.includes(status as typeof LEAD_STATUS[number])) throw new Error(`Estado inválido: ${status}`)
     const note = str(b.note)
@@ -335,9 +393,8 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   async 'leads.convert'(b) {
-    const id = str(b.id)
-    const lead = await prisma.lead.findUnique({ where: { id } })
-    if (!lead) throw new Error('Lead no encontrado')
+    const lead = await findLead(b)
+    const id = lead.id
     if (lead.status === 'WON') throw new Error('El lead ya está ganado')
     const value = num(b.monthlyValue)
     const [client] = await prisma.$transaction([
@@ -367,12 +424,12 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
 
   // Welcome message for a new client: Juanba approves the text, then the bot sends it
   async 'onboarding.preview'(b) {
-    const { lead, services, mensaje } = await onboardingDraft(str(b.leadId))
+    const { lead, services, mensaje } = await onboardingDraft((await findLead(b, 'leadId')).id)
     return { lead: lead.name, telefono: lead.phone, servicios: services, mensaje }
   },
 
   async 'onboarding.send'(b) {
-    const { lead, mensaje } = await onboardingDraft(str(b.leadId))
+    const { lead, mensaje } = await onboardingDraft((await findLead(b, 'leadId')).id)
     if (!lead.phone) throw new Error('El lead no tiene teléfono cargado')
     const text = str(b.mensaje) || mensaje
     await sendToLead(`${lead.phone}@c.us`, text)
@@ -383,7 +440,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
 
   // Manual start (e.g. a client closed outside the pipeline); does nothing if it already ran
   async 'onboarding.start'(b) {
-    const result = await startOnboarding(str(b.leadId), str(b.clientId) || null)
+    const result = await startOnboarding((await findLead(b, 'leadId')).id, str(b.clientId) || null)
     return result.already ? { ok: true, aviso: 'El onboarding de este lead ya estaba creado' } : { ok: true, tareas_creadas: result.created }
   },
 
@@ -399,9 +456,8 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
 
   // Client plan (what monthly production is built from) and notes
   async 'clients.update'(b) {
-    const id = str(b.id)
-    const client = await prisma.client.findUnique({ where: { id } })
-    if (!client) throw new Error('Cliente no encontrado')
+    const client = await findClient(b)
+    const id = client.id
     const planType = str(b.planType).toLowerCase()
     if (planType && !['unico', 'personalizado'].includes(planType)) throw new Error('planType debe ser "unico" o "personalizado"')
     // endDate: "YYYY-MM-DD" schedules the end (first day without service); cancelEnd clears it
@@ -462,7 +518,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   async 'tasks.complete'(b) {
-    const task = await prisma.task.update({ where: { id: str(b.id) }, data: { status: 'DONE' } })
+    const task = await prisma.task.update({ where: { id: (await findTask(b)).id }, data: { status: 'DONE' } })
     const o = await owner()
     if (o) logActivity('TASK_COMPLETED', `Tarea completada: ${task.title}`, o.userId, { entityId: task.id, entityType: 'task' })
     return { ok: true, tarea: { id: task.id, titulo: task.title } }
@@ -554,9 +610,8 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   async 'events.update'(b) {
-    const id = str(b.id)
-    const existing = await prisma.calendarEvent.findUnique({ where: { id } })
-    if (!existing) throw new Error('Evento no encontrado')
+    const existing = await findEvent(b)
+    const id = existing.id
     const startDate = date(b.startDate)
     const endDate = date(b.endDate)
     const duration = existing.endDate.getTime() - existing.startDate.getTime()
@@ -575,8 +630,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   async 'events.delete'(b) {
-    const event = await prisma.calendarEvent.delete({ where: { id: str(b.id) } }).catch(() => null)
-    if (!event) throw new Error('Evento no encontrado')
+    const event = await prisma.calendarEvent.delete({ where: { id: (await findEvent(b)).id } })
     return { ok: true, eliminado: event.title }
   },
 
