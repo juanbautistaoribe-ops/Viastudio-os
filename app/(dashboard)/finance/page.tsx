@@ -16,8 +16,9 @@ import type { Income, Expense, FinanceSummary, Client } from '@/types'
 function fmtARS(n: number) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n)
 }
+// "US$" so dollars can't be mistaken for pesos (en-US formatting writes just "$")
 function fmtUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  return `${n < 0 ? '-' : ''}US$${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.abs(n))}`
 }
 function fmtPct(n: number) {
   return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`
