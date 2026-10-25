@@ -390,6 +390,33 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     return { mensaje: parts.join('\n\n') }
   },
 
+  // Bot leads still "qualified" ~3h after the handoff (nextActionDate is set to +2h by the lead webhook).
+  // Each lead is reminded once (tag `recordado`). Mon–Sat, 9 to 21 Argentina time.
+  async 'reminders.uncontacted'() {
+    const now = new Date()
+    const local = new Date(now.toLocaleString('en-US', { timeZone: TZ }))
+    if (local.getDay() === 0 || local.getHours() < 9 || local.getHours() >= 21) return { total: 0, mensaje: null }
+    const leads = await prisma.lead.findMany({
+      where: {
+        status: 'QUALIFIED',
+        tags: { has: 'whatsapp-bot' },
+        NOT: { tags: { has: 'recordado' } },
+        nextActionDate: { lte: new Date(now.getTime() - 60 * 60 * 1000) },
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+    if (!leads.length) return { total: 0, mensaje: null }
+    await Promise.all(leads.map((l) => prisma.lead.update({ where: { id: l.id }, data: { tags: [...l.tags, 'recordado'] } })))
+    const lines = leads.map((l) => {
+      const servicio = l.tags.find((t) => ['web', 'chatbot', 'plan-unico', 'branding', 'solo-anuncios', 'consultoria', 'desayuno'].includes(t))
+      return `• ${l.name}${l.company && l.company !== l.name ? ` (${l.company})` : ''}${servicio ? ` · ${servicio}` : ''}${l.potentialValue ? ` · ${money(l.potentialValue, l.currency)}` : ''}${l.phone ? `\n  wa.me/${l.phone}` : ''}`
+    })
+    return {
+      total: leads.length,
+      mensaje: `⏰ ${leads.length === 1 ? 'Lead derivado que todavía no contactaste' : `${leads.length} leads derivados que todavía no contactaste`}:\n\n${lines.join('\n')}\n\nCuando le escribas, decime "ya contacté a ${leads[0].name.split(' ')[0]}" y lo marco como contactado.`,
+    }
+  },
+
   // Items starting in the 5-minute window that ends REMINDER_MINUTES from now (called every 5 min)
   async 'reminders.due'() {
     const step = 5 * 60 * 1000
