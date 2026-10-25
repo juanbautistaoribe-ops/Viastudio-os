@@ -59,7 +59,7 @@ export function ClientsOverview({ clients }: ClientsOverviewProps) {
                   className="text-xs font-semibold tabular-nums"
                   style={{ color: 'var(--color-text)' }}
                 >
-                  {formatCurrency(client.monthlyValue)}
+                  {formatCurrency(client.monthlyValue, client.currency ?? 'ARS')}
                 </p>
                 <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>/mo</p>
               </div>

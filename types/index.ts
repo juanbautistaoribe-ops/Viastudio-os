@@ -320,6 +320,8 @@ export interface DashboardStats {
   criticalTasks: number
   activeLeads: number
   leadsValue: number
+  leadsValueARS: number
+  leadsValueUSD: number
   leadsValueGrowth: number
   upcomingEvents: number
   tasksCompletedThisWeek: number

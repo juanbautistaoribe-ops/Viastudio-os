@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Users, DollarSign, CheckSquare, TrendingUp } from 'lucide-react'
+import { Users, DollarSign, CheckSquare, TrendingUp, type LucideIcon } from 'lucide-react'
 import { StatCard } from '@/components/shared/stat-card'
 import { formatCurrency } from '@/lib/utils'
 import type { DashboardStats } from '@/types'
@@ -43,15 +43,59 @@ function SkeletonCard() {
   )
 }
 
+function DualCurrencyCard({ title, ars, usd, icon: Icon, color, delay }: {
+  title: string
+  ars: number
+  usd: number
+  icon: LucideIcon
+  color: string
+  delay: number
+}) {
+  const arsAnimated = useCountUp(ars, 900, 50)
+  const usdAnimated = useCountUp(usd, 900, 50)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay }}
+      className="card card-hover p-5"
+    >
+      <div className="flex items-start justify-between mb-3">
+        <p className="text-xs font-medium" style={{ color: 'var(--color-text-2)' }}>
+          {title}
+        </p>
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center"
+          style={{ background: `${color}18`, color }}
+        >
+          <Icon size={15} strokeWidth={2} />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>Pesos</p>
+          <p className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
+            {formatCurrency(arsAnimated, 'ARS')}
+          </p>
+        </div>
+        <div style={{ borderTop: '1px solid var(--color-border-subtle)', paddingTop: '8px' }}>
+          <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>Dólares</p>
+          <p className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
+            {formatCurrency(usdAnimated, 'USD')}
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
 interface KPIGridProps {
   stats: DashboardStats
   loading?: boolean
 }
 
 export function KPIGrid({ stats, loading }: KPIGridProps) {
-  const arsAnimated = useCountUp(stats.monthlyRevenueARS, 900, 50)
-  const usdAnimated = useCountUp(stats.monthlyRevenueUSD, 900, 50)
-
   if (loading) {
     return (
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
@@ -71,38 +115,14 @@ export function KPIGrid({ stats, loading }: KPIGridProps) {
         delay={0}
       />
 
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.05 }}
-        className="card card-hover p-5"
-      >
-        <div className="flex items-start justify-between mb-3">
-          <p className="text-xs font-medium" style={{ color: 'var(--color-text-2)' }}>
-            Facturación Mensual
-          </p>
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center"
-            style={{ background: '#22C55E18', color: '#22C55E' }}
-          >
-            <DollarSign size={15} strokeWidth={2} />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>Pesos</p>
-            <p className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
-              {formatCurrency(arsAnimated, 'ARS')}
-            </p>
-          </div>
-          <div style={{ borderTop: '1px solid var(--color-border-subtle)', paddingTop: '8px' }}>
-            <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>Dólares</p>
-            <p className="text-xl font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
-              {formatCurrency(usdAnimated, 'USD')}
-            </p>
-          </div>
-        </div>
-      </motion.div>
+      <DualCurrencyCard
+        title="Facturación Mensual"
+        ars={stats.monthlyRevenueARS}
+        usd={stats.monthlyRevenueUSD}
+        icon={DollarSign}
+        color="#22C55E"
+        delay={0.05}
+      />
 
       <StatCard
         title="Tareas Abiertas"
@@ -113,13 +133,12 @@ export function KPIGrid({ stats, loading }: KPIGridProps) {
         growthLabel={`${stats.criticalTasks} críticas`}
         delay={0.1}
       />
-      <StatCard
+      <DualCurrencyCard
         title="Valor del Pipeline"
-        value={stats.leadsValue}
+        ars={stats.leadsValueARS}
+        usd={stats.leadsValueUSD}
         icon={TrendingUp}
-        iconColor="#3B82F6"
-        growth={stats.leadsValueGrowth}
-        isCurrency
+        color="#3B82F6"
         delay={0.15}
       />
     </div>

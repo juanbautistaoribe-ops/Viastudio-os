@@ -21,6 +21,8 @@ const EMPTY_STATS: DashboardStats = {
   criticalTasks: 0,
   activeLeads: 0,
   leadsValue: 0,
+  leadsValueARS: 0,
+  leadsValueUSD: 0,
   leadsValueGrowth: 0,
   upcomingEvents: 0,
   tasksCompletedThisWeek: 0,

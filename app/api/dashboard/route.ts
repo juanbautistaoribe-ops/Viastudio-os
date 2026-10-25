@@ -53,7 +53,9 @@ export async function GET() {
   const criticalTasks = pendingTasks.filter(t => t.priority === 'CRITICAL')
   const tasksCompletedThisWeek = tasks.filter(t => t.status === 'DONE' && t.updatedAt >= startOfWeek)
   const activeLeads = leads.filter(l => !['WON', 'LOST'].includes(l.status))
-  const leadsValue = activeLeads.reduce((a, l) => a + l.potentialValue, 0)
+  const leadsValueARS = activeLeads.filter(l => l.currency !== 'USD').reduce((a, l) => a + l.potentialValue, 0)
+  const leadsValueUSD = activeLeads.filter(l => l.currency === 'USD').reduce((a, l) => a + l.potentialValue, 0)
+  const leadsValue = leadsValueARS + leadsValueUSD
   const monthlyRevenueARS = activeClients.filter(c => c.currency === 'ARS').reduce((a, c) => a + c.monthlyValue, 0)
   const monthlyRevenueUSD = activeClients.filter(c => c.currency === 'USD').reduce((a, c) => a + c.monthlyValue, 0)
   const monthlyRevenue = monthlyRevenueARS + monthlyRevenueUSD
@@ -69,6 +71,8 @@ export async function GET() {
     criticalTasks: criticalTasks.length,
     activeLeads: activeLeads.length,
     leadsValue,
+    leadsValueARS,
+    leadsValueUSD,
     leadsValueGrowth: 0,
     upcomingEvents: events.length,
     tasksCompletedThisWeek: tasksCompletedThisWeek.length,
