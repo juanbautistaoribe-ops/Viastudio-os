@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { isWebhookAuthorized } from '@/lib/webhook-auth'
 import { logActivity } from '@/lib/activity'
 import { getDolarBlue } from '@/lib/dolar'
+import { botMetrics } from '@/lib/bot-metrics'
 
 export const maxDuration = 30
 
@@ -131,6 +132,14 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     const blue = await getDolarBlue()
     if (!blue) throw new Error('No pude obtener la cotización del dólar ahora')
     return { blue_venta: blue.venta, blue_compra: blue.compra, actualizado: blue.fecha }
+  },
+
+  // Bot funnel per ad/service. Default: current month
+  async 'bot.metrics'(b) {
+    const days = num(b.days)
+    const to = new Date()
+    const from = days ? new Date(to.getTime() - days * 24 * 60 * 60 * 1000) : new Date(`${currentPeriod()}-01T00:00:00-03:00`)
+    return botMetrics(from, to)
   },
 
   async 'leads.search'(b) {

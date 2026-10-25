@@ -480,3 +480,24 @@ model Integration {
   @@unique([userId, provider])
   @@map("integrations")
 }
+
+// ─── Bot de WhatsApp ─────────────────────────────────────────────────────────
+
+// One row per WhatsApp chat with the sales bot (sent by n8n), used for funnel metrics per ad/service
+model BotConversation {
+  id            String    @id @default(uuid())
+  chatId        String    @unique @map("chat_id")
+  phone         String
+  name          String?
+  firstMessage  String?   @map("first_message")
+  source        String    @default("general") // service of the ad, inferred from the first message
+  status        String    @default("activo")  // activo, calificado, descartado, frio, humano
+  messages      Int       @default(0)
+  followups     Int       @default(0)
+  qualifiedAt   DateTime? @map("qualified_at")
+  lastMessageAt DateTime  @default(now()) @map("last_message_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("bot_conversations")
+}

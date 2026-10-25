@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { Header } from '@/components/layout/header'
 import { Avatar } from '@/components/shared/avatar'
 import { NewLeadModal } from '@/components/leads/new-lead-modal'
+import { BotFunnel } from '@/components/leads/bot-funnel'
 import { formatCurrency, formatDate, getStatusBadgeClass, getStatusLabel } from '@/lib/utils'
 import { Plus, Search, Clock, MoreHorizontal, Loader2, UserCheck } from 'lucide-react'
 import type { Lead, LeadStatus } from '@/types'
@@ -142,6 +143,8 @@ export default function LeadsPage() {
             </motion.div>
           ))}
         </div>
+
+        <BotFunnel />
 
         {/* Toolbar */}
         <div className="flex items-center gap-3 mb-5">
