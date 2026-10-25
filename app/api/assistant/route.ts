@@ -41,8 +41,37 @@ function matches(q: string, ...fields: (string | null | undefined | string[])[])
   return words.every((w) => hay.includes(w))
 }
 
+const TZ = 'America/Argentina/Buenos_Aires'
+const EVENT_TYPES = ['MEETING', 'DEADLINE', 'PUBLICATION', 'FOLLOWUP', 'INTERNAL', 'OTHER'] as const
+const REMINDER_MINUTES = 20
+
 function currentPeriod() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 7)
+  return new Date().toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 7)
+}
+
+// Start/end of today in Argentina (UTC-3, no DST), as UTC instants
+function todayRangeAR() {
+  const ymd = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
+  const start = new Date(`${ymd}T00:00:00-03:00`)
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) }
+}
+
+function hora(d: Date) {
+  return d.toLocaleTimeString('es-AR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function money(amount: number, currency: string) {
+  return currency === 'USD'
+    ? `US$${new Intl.NumberFormat('en-US').format(amount)}`
+    : `$${new Intl.NumberFormat('es-AR').format(amount)}`
+}
+
+function eventOut(e: Awaited<ReturnType<typeof prisma.calendarEvent.findFirst>>) {
+  if (!e) return null
+  return {
+    id: e.id, titulo: e.title, tipo: e.type.toLowerCase(), inicio: e.startDate, fin: e.endDate, todo_el_dia: e.allDay,
+    lugar: e.location, link: e.meetingUrl, descripcion: e.description, hora_ar: e.allDay ? null : hora(e.startDate),
+  }
 }
 
 async function owner() {
@@ -260,6 +289,122 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     if (!count) throw new Error('No encontré esos ingresos')
     const updated = await prisma.income.findMany({ where: { id: { in: ids } }, include: { client: { select: { company: true } } } })
     return { ok: true, marcados: count, ingresos: updated.map((i) => ({ cliente: i.client?.company ?? null, concepto: i.concept, monto: i.amount, moneda: i.currency })) }
+  },
+
+  async 'events.list'(b) {
+    const { start } = todayRangeAR()
+    const from = date(b.from) ?? start
+    const to = date(b.to) ?? new Date(from.getTime() + 7 * 24 * 60 * 60 * 1000)
+    const q = str(b.q)
+    const events = await prisma.calendarEvent.findMany({ where: { startDate: { gte: from, lt: to } }, orderBy: { startDate: 'asc' }, take: 50 })
+    const found = events.filter((e) => !q || matches(q, e.title, e.description, e.location)).slice(0, 15)
+    return { total: found.length, eventos: found.map(eventOut) }
+  },
+
+  async 'events.create'(b) {
+    const title = str(b.title)
+    const startDate = date(b.startDate)
+    if (!title || !startDate) throw new Error('Faltan título o fecha de inicio')
+    const o = await owner()
+    if (!o) throw new Error('No hay perfil de usuario')
+    const type = str(b.type).toUpperCase()
+    const event = await prisma.calendarEvent.create({
+      data: {
+        title,
+        description: str(b.description) || null,
+        type: EVENT_TYPES.includes(type as typeof EVENT_TYPES[number]) ? type as typeof EVENT_TYPES[number] : 'MEETING',
+        startDate,
+        endDate: date(b.endDate) ?? new Date(startDate.getTime() + 60 * 60 * 1000),
+        allDay: b.allDay === true,
+        location: str(b.location) || null,
+        meetingUrl: str(b.meetingUrl) || null,
+        clientId: str(b.clientId) || null,
+        attendees: [],
+        createdById: o.id,
+      },
+    })
+    return { ok: true, evento: eventOut(event) }
+  },
+
+  async 'events.update'(b) {
+    const id = str(b.id)
+    const existing = await prisma.calendarEvent.findUnique({ where: { id } })
+    if (!existing) throw new Error('Evento no encontrado')
+    const startDate = date(b.startDate)
+    const endDate = date(b.endDate)
+    const duration = existing.endDate.getTime() - existing.startDate.getTime()
+    const event = await prisma.calendarEvent.update({
+      where: { id },
+      data: {
+        ...(str(b.title) && { title: str(b.title) }),
+        ...(str(b.description) && { description: str(b.description) }),
+        ...(startDate && { startDate, endDate: endDate ?? new Date(startDate.getTime() + duration) }),
+        ...(!startDate && endDate && { endDate }),
+        ...(str(b.location) && { location: str(b.location) }),
+        ...(str(b.meetingUrl) && { meetingUrl: str(b.meetingUrl) }),
+      },
+    })
+    return { ok: true, evento: eventOut(event) }
+  },
+
+  async 'events.delete'(b) {
+    const event = await prisma.calendarEvent.delete({ where: { id: str(b.id) } }).catch(() => null)
+    if (!event) throw new Error('Evento no encontrado')
+    return { ok: true, eliminado: event.title }
+  },
+
+  // Morning brief, ready to send by WhatsApp
+  async 'agenda.today'() {
+    const { start, end } = todayRangeAR()
+    const [events, tasksToday, overdue, leads, pending] = await Promise.all([
+      prisma.calendarEvent.findMany({ where: { startDate: { gte: start, lt: end } }, orderBy: { startDate: 'asc' } }),
+      prisma.task.findMany({ where: { status: { notIn: ['DONE', 'CANCELLED'] }, dueDate: { gte: start, lt: end } }, orderBy: { dueDate: 'asc' } }),
+      prisma.task.findMany({ where: { status: { notIn: ['DONE', 'CANCELLED'] }, dueDate: { lt: start } }, orderBy: { dueDate: 'asc' } }),
+      prisma.lead.findMany({ where: { status: { notIn: ['WON', 'LOST'] }, nextActionDate: { lt: end } }, orderBy: { nextActionDate: 'asc' } }),
+      prisma.income.findMany({ where: { period: currentPeriod(), status: { in: ['INVOICED', 'OVERDUE'] } } }),
+    ])
+    const fecha = new Date().toLocaleDateString('es-AR', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
+    const list = <T,>(items: T[], f: (x: T) => string, max = 8) =>
+      [...items.slice(0, max).map((x) => `• ${f(x)}`), ...(items.length > max ? [`• y ${items.length - max} más`] : [])].join('\n')
+
+    const parts = [`☀️ Buen día, Juanba! Hoy es ${fecha}.`]
+    parts.push(events.length
+      ? `📅 Agenda\n${list(events, (e) => `${e.allDay ? 'Todo el día' : hora(e.startDate)} ${e.title}${e.location ? ` (${e.location})` : ''}`)}`
+      : '📅 Sin reuniones agendadas.')
+    if (tasksToday.length) parts.push(`✅ Tareas de hoy\n${list(tasksToday, (t) => `${t.title}${t.dueDate ? ` (${hora(t.dueDate)})` : ''}`)}`)
+    if (overdue.length) parts.push(`⚠️ Tareas vencidas\n${list(overdue, (t) => t.title, 5)}`)
+    if (leads.length) {
+      parts.push(`🔥 Leads para seguir\n${list(leads, (l) => `${l.name}${l.company && l.company !== l.name ? ` (${l.company})` : ''}: ${l.nextAction ?? 'seguimiento'}${l.potentialValue ? ` · ${money(l.potentialValue, l.currency)}` : ''}`, 6)}`)
+    }
+    if (pending.length) {
+      const ars = pending.filter((i) => i.currency !== 'USD').reduce((a, i) => a + i.amount, 0)
+      const usd = pending.filter((i) => i.currency === 'USD').reduce((a, i) => a + i.amount, 0)
+      const totals = [ars && money(ars, 'ARS'), usd && money(usd, 'USD')].filter(Boolean).join(' + ')
+      parts.push(`💰 Pendiente de cobro este mes: ${pending.length} ${pending.length === 1 ? 'ingreso' : 'ingresos'} (${totals}).`)
+    }
+    if (!events.length && !tasksToday.length && !overdue.length && !leads.length) parts.push('Día libre de pendientes. Si querés agendar algo, decímelo. 🙌')
+    return { mensaje: parts.join('\n\n') }
+  },
+
+  // Items starting in the 5-minute window that ends REMINDER_MINUTES from now (called every 5 min)
+  async 'reminders.due'() {
+    const step = 5 * 60 * 1000
+    const base = Math.floor(Date.now() / step) * step
+    const from = new Date(base + (REMINDER_MINUTES - 5) * 60 * 1000)
+    const to = new Date(base + REMINDER_MINUTES * 60 * 1000)
+    const [events, tasks] = await Promise.all([
+      prisma.calendarEvent.findMany({ where: { allDay: false, startDate: { gt: from, lte: to } }, orderBy: { startDate: 'asc' } }),
+      prisma.task.findMany({ where: { status: { notIn: ['DONE', 'CANCELLED'] }, dueDate: { gt: from, lte: to } }, orderBy: { dueDate: 'asc' } }),
+    ])
+    const mensajes = [
+      ...events.map((e) => [
+        `⏰ En ${REMINDER_MINUTES} min (${hora(e.startDate)}): ${e.title}`,
+        e.location && `📍 ${e.location}`,
+        e.meetingUrl && `🔗 ${e.meetingUrl}`,
+      ].filter(Boolean).join('\n')),
+      ...tasks.map((t) => `⏰ En ${REMINDER_MINUTES} min (${hora(t.dueDate!)}): ${t.title}`),
+    ]
+    return { total: mensajes.length, mensajes }
   },
 
   async 'expense.create'(b) {
