@@ -6,6 +6,7 @@ import { Header } from '@/components/layout/header'
 import { Avatar } from '@/components/shared/avatar'
 import { NewLeadModal } from '@/components/leads/new-lead-modal'
 import { BotFunnel } from '@/components/leads/bot-funnel'
+import { ProposalsTable, proposalBadge, type ProposalRow } from '@/components/leads/proposals-table'
 import { formatCurrency, formatDate, getStatusBadgeClass, getStatusLabel } from '@/lib/utils'
 import { Plus, Search, Clock, MoreHorizontal, Loader2, UserCheck } from 'lucide-react'
 import type { Lead, LeadStatus } from '@/types'
@@ -33,7 +34,8 @@ export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [view, setView] = useState<'pipeline' | 'list'>('pipeline')
+  const [view, setView] = useState<'pipeline' | 'list' | 'proposals'>('pipeline')
+  const [proposals, setProposals] = useState<ProposalRow[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editingLead, setEditingLead] = useState<Lead | null>(null)
   const [dragOverStage, setDragOverStage] = useState<string | null>(null)
@@ -45,6 +47,12 @@ export default function LeadsPage() {
       .then((data) => setLeads(Array.isArray(data) ? data : []))
       .catch(() => setLeads([]))
       .finally(() => setLoading(false))
+    const loadProposals = () =>
+      fetch('/api/proposals')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (Array.isArray(data)) setProposals(data) })
+        .catch(() => {})
+    loadProposals()
 
     // Leads also arrive from the WhatsApp bot: refresh in the background while the page is visible
     const refresh = () => {
@@ -53,6 +61,7 @@ export default function LeadsPage() {
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => { if (Array.isArray(data)) setLeads(data) })
         .catch(() => {})
+      loadProposals()
     }
     const interval = setInterval(refresh, 20_000)
     document.addEventListener('visibilitychange', refresh)
@@ -153,7 +162,7 @@ export default function LeadsPage() {
             <input value={search} onChange={(e) => setSearch(e.target.value)} className="input-base pl-8 py-1.5 text-xs" placeholder="Buscar leads…" />
           </div>
           <div className="flex items-center rounded-lg p-0.5 gap-0.5" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border-subtle)' }}>
-            {([{ value: 'pipeline' as const, label: 'Pipeline' }, { value: 'list' as const, label: 'Lista' }]).map(({ value, label }) => (
+            {([{ value: 'pipeline' as const, label: 'Pipeline' }, { value: 'list' as const, label: 'Lista' }, { value: 'proposals' as const, label: `Propuestas${proposals.length ? ` (${proposals.length})` : ''}` }]).map(({ value, label }) => (
               <button
                 key={value}
                 onClick={() => setView(value)}
@@ -172,7 +181,7 @@ export default function LeadsPage() {
           </div>
         )}
 
-        {!loading && leads.length === 0 && (
+        {!loading && leads.length === 0 && view !== 'proposals' && (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>No hay leads todavía</p>
             <button onClick={() => setModalOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: 'var(--color-primary)' }}>
@@ -227,6 +236,7 @@ export default function LeadsPage() {
                         <LeadCard
                           key={lead.id}
                           lead={lead}
+                          proposal={proposals.find((p) => p.leadId === lead.id)}
                           delay={i * 0.04}
                           onEdit={() => setEditingLead(lead)}
                           onDelete={() => handleDelete(lead)}
@@ -241,6 +251,9 @@ export default function LeadsPage() {
             })}
           </div>
         )}
+
+        {/* Proposals view */}
+        {!loading && view === 'proposals' && <ProposalsTable proposals={proposals} />}
 
         {/* List view */}
         {!loading && leads.length > 0 && view === 'list' && (
@@ -276,8 +289,8 @@ export default function LeadsPage() {
   )
 }
 
-function LeadCard({ lead, delay = 0, onEdit, onDelete, onConvert, onDragStart }: {
-  lead: Lead; delay?: number
+function LeadCard({ lead, proposal, delay = 0, onEdit, onDelete, onConvert, onDragStart }: {
+  lead: Lead; proposal?: ProposalRow; delay?: number
   onEdit: () => void; onDelete: () => void; onConvert: () => void; onDragStart: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -329,6 +342,14 @@ function LeadCard({ lead, delay = 0, onEdit, onDelete, onConvert, onDragStart }:
         </div>
       </div>
       <p className="text-[10px] mb-2" style={{ color: 'var(--color-text-muted)' }}>{lead.name}</p>
+      {proposal && (() => {
+        const badge = proposalBadge(proposal)
+        return (
+          <a href={proposal.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-block mb-2 px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: `${badge.color}22`, color: badge.color }}>
+            Propuesta: {badge.label}{proposal.consulta ? ' · 💬' : ''}
+          </a>
+        )
+      })()}
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-bold" style={{ color: 'var(--color-success)' }}>{formatCurrency(lead.potentialValue ?? 0, lead.currency ?? 'ARS')}</span>
         {lead.nextActionDate && (

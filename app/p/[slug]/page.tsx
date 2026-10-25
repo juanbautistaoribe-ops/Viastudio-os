@@ -3,7 +3,7 @@ import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
-import { money, notifyJuanba, type ProposalItem } from '@/lib/proposals'
+import { APP_URL, money, notifyJuanba, type ProposalItem } from '@/lib/proposals'
 import { AcceptProposal } from './accept'
 
 // Public proposal page (no login). Shared by Juanba with the lead by WhatsApp.
@@ -19,9 +19,14 @@ async function load(slug: string) {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const p = await load((await params).slug)
   if (!p) return { title: 'Propuesta' }
+  const title = `Propuesta para ${p.business || p.clientName} · ViaStudio`
+  const description = p.notes ?? 'Propuesta comercial de ViaStudio'
   return {
-    title: { absolute: `Propuesta para ${p.business || p.clientName} · ViaStudio` },
-    description: p.notes ?? 'Propuesta comercial de ViaStudio',
+    // Public domain, not the per-deployment URL (protected): WhatsApp has to be able to fetch the preview image
+    metadataBase: new URL(APP_URL),
+    title: { absolute: title },
+    description,
+    openGraph: { title, description, siteName: 'ViaStudio', type: 'website', images: [{ url: `${APP_URL}/p/${p.slug}/og`, width: 1200, height: 630 }] },
     robots: { index: false, follow: false },
   }
 }
