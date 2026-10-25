@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Header } from '@/components/layout/header'
 import { Avatar } from '@/components/shared/avatar'
+import { formatRelativeTime } from '@/lib/utils'
 import {
   User, Shield, Palette, Plug, Bell, Key,
   ChevronRight, Check, Zap, ExternalLink, Loader2
@@ -21,8 +22,7 @@ const SETTINGS_SECTIONS = [
 const STATIC_INTEGRATIONS = [
   { id: 'claude', name: 'Claude API', description: 'Asistente IA para contenido y estrategia', status: 'connected', color: '#6F2BFA' },
   { id: 'supabase', name: 'Supabase', description: 'Base de datos y autenticación', status: 'connected', color: '#3ECF8E' },
-  { id: 'whatsapp', name: 'WhatsApp Business', description: 'Comunicación con clientes por WhatsApp', status: 'coming_soon', color: '#25D366' },
-  { id: 'n8n', name: 'n8n Automations', description: 'Automatización de flujos de trabajo', status: 'coming_soon', color: '#FF6D5A' },
+  { id: 'n8n', name: 'n8n Automations', description: 'Seguimientos, resumen del día (7:00) y recordatorios', status: 'connected', color: '#FF6D5A' },
 ]
 
 export default function SettingsPage() {
@@ -233,9 +233,31 @@ function ProfileSettings({ onSave, saved, saveError }: { onSave: (name: string) 
   )
 }
 
+function IntegrationRow({ name, description, color, status, detail }: { name: string; description: string; color: string; status: 'connected' | 'coming_soon'; detail?: string }) {
+  return (
+    <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}18` }}>
+          <Zap size={16} style={{ color }} />
+        </div>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>{name}</p>
+          <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{description}</p>
+          {detail && <p className="text-[10px] mt-0.5" style={{ color: 'var(--color-text-2)' }}>{detail}</p>}
+        </div>
+      </div>
+      <div>
+        {status === 'connected' && <span className="badge badge-success">Conectado</span>}
+        {status === 'coming_soon' && <span className="badge badge-muted">Próximamente</span>}
+      </div>
+    </div>
+  )
+}
+
 function IntegrationsSettings() {
   const [googleConnected, setGoogleConnected] = useState(false)
   const [loadingGoogle, setLoadingGoogle] = useState(true)
+  const [bot, setBot] = useState<{ lastLeadAt: string | null; leadsThisMonth: number } | null>(null)
 
   useEffect(() => {
     fetch('/api/integrations/google/status')
@@ -243,27 +265,11 @@ function IntegrationsSettings() {
       .then(d => setGoogleConnected(d.connected))
       .catch(() => {})
       .finally(() => setLoadingGoogle(false))
+    fetch('/api/integrations/whatsapp-bot/status')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setBot(d) })
+      .catch(() => {})
   }, [])
-
-  function IntegrationRow({ name, description, color, status }: { name: string; description: string; color: string; status: 'connected' | 'coming_soon' }) {
-    return (
-      <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}18` }}>
-            <Zap size={16} style={{ color }} />
-          </div>
-          <div>
-            <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>{name}</p>
-            <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{description}</p>
-          </div>
-        </div>
-        <div>
-          {status === 'connected' && <span className="badge badge-success">Conectado</span>}
-          {status === 'coming_soon' && <span className="badge badge-muted">Próximamente</span>}
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div>
@@ -300,6 +306,16 @@ function IntegrationsSettings() {
             )}
           </div>
         </div>
+
+        <IntegrationRow
+          name="WhatsApp (bot + asistente)"
+          description="Bot de ventas con IA para leads y asistente interno para vos"
+          color="#25D366"
+          status="connected"
+          detail={bot
+            ? `${bot.lastLeadAt ? `Último lead: ${formatRelativeTime(bot.lastLeadAt)}` : 'Todavía sin leads'} · ${bot.leadsThisMonth} ${bot.leadsThisMonth === 1 ? 'lead' : 'leads'} este mes`
+            : undefined}
+        />
 
         {STATIC_INTEGRATIONS.map(i => (
           <IntegrationRow key={i.id} name={i.name} description={i.description} color={i.color} status={i.status as 'connected' | 'coming_soon'} />
