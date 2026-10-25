@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { isWebhookAuthorized } from '@/lib/webhook-auth'
 import { logActivity } from '@/lib/activity'
+import { getDolarBlue } from '@/lib/dolar'
 
 export const maxDuration = 30
 
@@ -96,12 +97,13 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   async summary() {
     const period = currentPeriod()
     const now = new Date()
-    const [leads, clients, tasks, incomes, expenses] = await Promise.all([
+    const [leads, clients, tasks, incomes, expenses, blue] = await Promise.all([
       prisma.lead.findMany(),
       prisma.client.findMany({ where: { status: 'ACTIVE' } }),
       prisma.task.findMany({ where: { status: { notIn: ['DONE', 'CANCELLED'] } } }),
       prisma.income.findMany({ where: { period } }),
       prisma.expense.findMany({ where: { date: { gte: new Date(`${period}-01T00:00:00-03:00`) } } }),
+      getDolarBlue(),
     ])
     const open = leads.filter((l) => !['WON', 'LOST'].includes(l.status))
     const sum = <T,>(arr: T[], f: (x: T) => number) => arr.reduce((a, x) => a + f(x), 0)
@@ -121,7 +123,14 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
       ingresos_del_mes: byCur(incomes, (i) => i.amount),
       cobrado_del_mes: byCur(incomes.filter((i) => i.status === 'COLLECTED'), (i) => i.amount),
       gastos_del_mes: byCur(expenses, (e) => e.amount),
+      dolar_blue_venta: blue?.venta ?? null,
     }
+  },
+
+  async dolar() {
+    const blue = await getDolarBlue()
+    if (!blue) throw new Error('No pude obtener la cotización del dólar ahora')
+    return { blue_venta: blue.venta, blue_compra: blue.compra, actualizado: blue.fecha }
   },
 
   async 'leads.search'(b) {
@@ -258,6 +267,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
         concept,
         amount,
         currency: str(b.currency).toUpperCase() === 'USD' ? 'USD' : 'ARS',
+        exchangeRate: num(b.exchangeRate) ?? (await getDolarBlue())?.venta ?? null,
         status: collected ? 'COLLECTED' : 'INVOICED',
         collectedAt: collected ? new Date() : null,
         notes: str(b.notes) || 'Cargado por WhatsApp',
@@ -360,12 +370,13 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   // Morning brief, ready to send by WhatsApp
   async 'agenda.today'() {
     const { start, end } = todayRangeAR()
-    const [events, tasksToday, overdue, leads, pending] = await Promise.all([
+    const [events, tasksToday, overdue, leads, pending, blue] = await Promise.all([
       prisma.calendarEvent.findMany({ where: { startDate: { gte: start, lt: end } }, orderBy: { startDate: 'asc' } }),
       prisma.task.findMany({ where: { status: { notIn: ['DONE', 'CANCELLED'] }, dueDate: { gte: start, lt: end } }, orderBy: { dueDate: 'asc' } }),
       prisma.task.findMany({ where: { status: { notIn: ['DONE', 'CANCELLED'] }, dueDate: { lt: start } }, orderBy: { dueDate: 'asc' } }),
       prisma.lead.findMany({ where: { status: { notIn: ['WON', 'LOST'] }, nextActionDate: { lt: end } }, orderBy: { nextActionDate: 'asc' } }),
       prisma.income.findMany({ where: { period: currentPeriod(), status: { in: ['INVOICED', 'OVERDUE'] } } }),
+      getDolarBlue(),
     ])
     const fecha = new Date().toLocaleDateString('es-AR', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
     const list = <T,>(items: T[], f: (x: T) => string, max = 8) =>
@@ -386,6 +397,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
       const totals = [ars && money(ars, 'ARS'), usd && money(usd, 'USD')].filter(Boolean).join(' + ')
       parts.push(`💰 Pendiente de cobro este mes: ${pending.length} ${pending.length === 1 ? 'ingreso' : 'ingresos'} (${totals}).`)
     }
+    if (blue) parts.push(`💵 Dólar blue: ${money(blue.venta, 'ARS')}`)
     if (!events.length && !tasksToday.length && !overdue.length && !leads.length) parts.push('Día libre de pendientes. Si querés agendar algo, decímelo. 🙌')
     return { mensaje: parts.join('\n\n') }
   },
@@ -452,6 +464,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
         clientId: str(b.clientId) || null,
         amount,
         currency: str(b.currency).toUpperCase() === 'USD' ? 'USD' : 'ARS',
+        exchangeRate: num(b.exchangeRate) ?? (await getDolarBlue())?.venta ?? null,
         recurring: b.recurring === true,
         notes: str(b.notes) || 'Cargado por WhatsApp',
       },

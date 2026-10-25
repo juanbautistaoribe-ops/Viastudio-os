@@ -52,6 +52,18 @@ export function ExpenseModal({ open, expense, clients, onClose, onSaved }: Props
     }
   }, [open, expense])
 
+  // New records: prefill today's blue rate (editable)
+  useEffect(() => {
+    if (!open || expense) return
+    fetch('/api/dolar')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        const venta = d?.blue?.venta
+        if (venta) setForm(f => (f.exchangeRate ? f : { ...f, exchangeRate: String(venta) }))
+      })
+      .catch(() => {})
+  }, [open, expense])
+
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
   async function save() {
@@ -161,7 +173,7 @@ export function ExpenseModal({ open, expense, clients, onClose, onSaved }: Props
 
                 {form.currency === 'ARS' && (
                   <label className="flex flex-col gap-1">
-                    <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Tipo de cambio (ARS/USD)</span>
+                    <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Tipo de cambio (ARS/USD){!expense && ' · blue de hoy'}</span>
                     <input className="input-base text-xs" type="number" placeholder="1200" value={form.exchangeRate} onChange={e => set('exchangeRate', e.target.value)} />
                   </label>
                 )}

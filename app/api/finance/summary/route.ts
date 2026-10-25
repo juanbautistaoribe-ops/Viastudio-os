@@ -1,19 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
+import { getDolarBlue } from '@/lib/dolar'
 
 export const maxDuration = 30
 
+// Records without their own exchange rate fall back to today's blue rate
+let fallbackRate: number | null = null
+
 function toUSD(amount: number, currency: string, exchangeRate?: number | null): number {
   if (currency === 'USD') return amount
-  if (!exchangeRate || exchangeRate === 0) return 0
-  return amount / exchangeRate
+  const rate = exchangeRate || fallbackRate
+  if (!rate) return 0
+  return amount / rate
 }
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  fallbackRate = (await getDolarBlue())?.venta ?? null
 
   const { searchParams } = new URL(req.url)
   const now = new Date()
