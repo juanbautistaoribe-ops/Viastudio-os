@@ -44,6 +44,21 @@ export default function LeadsPage() {
       .then((data) => setLeads(Array.isArray(data) ? data : []))
       .catch(() => setLeads([]))
       .finally(() => setLoading(false))
+
+    // Leads also arrive from the WhatsApp bot: refresh in the background while the page is visible
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || dragLeadId.current) return
+      fetch('/api/leads')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (Array.isArray(data)) setLeads(data) })
+        .catch(() => {})
+    }
+    const interval = setInterval(refresh, 20_000)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [])
 
   const filtered = useMemo(() => {
