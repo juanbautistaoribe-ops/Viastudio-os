@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { timingSafeEqual } from 'crypto'
 import { prisma } from '@/lib/prisma'
+import { isWebhookAuthorized } from '@/lib/webhook-auth'
 
 export const maxDuration = 30
 
 // Receives qualified leads (and post-handoff notes) from the n8n WhatsApp bot.
-// Auth: header `x-webhook-secret` must match LEADS_WEBHOOK_SECRET.
 
 type ServiceType =
   | 'SOCIAL_MEDIA' | 'PAID_ADS' | 'SEO' | 'CONTENT' | 'EMAIL'
@@ -36,15 +35,6 @@ const SERVICES: { match: RegExp; tag: string; services: ServiceType[]; value: nu
 const WEB_COMPLEJA_USD = 700
 
 const RANK: Record<Priority, number> = { LOW: 0, MEDIUM: 1, HIGH: 2 }
-
-function isAuthorized(req: NextRequest) {
-  const expected = process.env.LEADS_WEBHOOK_SECRET
-  const given = req.headers.get('x-webhook-secret')
-  if (!expected || !given) return false
-  const a = Buffer.from(given)
-  const b = Buffer.from(expected)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
 
 // "$350.000 ARS/mes" → 350000
 function parseAmount(text: string | undefined) {
@@ -83,7 +73,7 @@ function pickMain(servicio: string, datosClave: string) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!isWebhookAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
