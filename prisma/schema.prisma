@@ -501,3 +501,29 @@ model BotConversation {
 
   @@map("bot_conversations")
 }
+
+// Commercial proposal with a public link (/p/[slug]); items = services with deliverables and prices
+model Proposal {
+  id            String    @id @default(uuid())
+  slug          String    @unique
+  leadId        String?   @map("lead_id")
+  clientName    String    @map("client_name")
+  business      String?
+  items         Json      @default("[]")
+  diagnosis     String?
+  solution      String?
+  timeline      String?
+  paymentTerms  String?   @map("payment_terms")
+  notes         String?
+  exchangeRate  Float?    @map("exchange_rate")
+  validUntil    DateTime? @map("valid_until")
+  status        String    @default("borrador") // borrador, enviada, vista, aceptada
+  viewCount     Int       @default(0) @map("view_count")
+  sentAt        DateTime? @map("sent_at")
+  firstViewedAt DateTime? @map("first_viewed_at")
+  acceptedAt    DateTime? @map("accepted_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("proposals")
+}

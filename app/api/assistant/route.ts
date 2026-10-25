@@ -4,6 +4,7 @@ import { isWebhookAuthorized } from '@/lib/webhook-auth'
 import { logActivity } from '@/lib/activity'
 import { getDolarBlue } from '@/lib/dolar'
 import { botMetrics } from '@/lib/bot-metrics'
+import { buildItems, createProposal, proposalSummary, proposalUrl, writeCopy, type ServiceInput } from '@/lib/proposals'
 import { buildPlan, createProduction, formatProposal, isLastBusinessDay, nextPeriod, periodOf, type Override } from '@/lib/production'
 
 export const maxDuration = 30
@@ -147,6 +148,67 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     const blue = await getDolarBlue()
     if (!blue) throw new Error('No pude obtener la cotización del dólar ahora')
     return { blue_venta: blue.venta, blue_compra: blue.compra, actualizado: blue.fecha }
+  },
+
+  // Commercial proposals with a public link. Created as draft; Juanba reviews it and sends the link himself
+  async 'proposals.create'(b) {
+    const proposal = await createProposal({
+      leadId: str(b.leadId) || undefined,
+      nombre: str(b.nombre) || undefined,
+      negocio: str(b.negocio) || undefined,
+      servicios: (Array.isArray(b.servicios) ? b.servicios : []) as ServiceInput[],
+      plazo: str(b.plazo) || undefined,
+      notas: str(b.notas) || undefined,
+      formaDePago: str(b.formaDePago) || undefined,
+      validezDias: num(b.validezDias) ?? undefined,
+    })
+    return { ok: true, id: proposal.id, ...proposalSummary(proposal) }
+  },
+
+  async 'proposals.update'(b) {
+    const existing = await prisma.proposal.findUnique({ where: { id: str(b.id) } })
+    if (!existing) throw new Error('Propuesta no encontrada')
+    const items = Array.isArray(b.servicios) && b.servicios.length ? buildItems(b.servicios as ServiceInput[]) : null
+    const regenerate = b.regenerar === true || !!items || !!str(b.notas)
+    const lead = existing.leadId ? await prisma.lead.findUnique({ where: { id: existing.leadId } }) : null
+    const copy = regenerate
+      ? await writeCopy({ nombre: existing.clientName, negocio: existing.business, contexto: lead?.notes?.slice(-1500) ?? '', items: items ?? (existing.items as never), notas: str(b.notas) || undefined })
+      : null
+    const validezDias = num(b.validezDias)
+    const updated = await prisma.proposal.update({
+      where: { id: existing.id },
+      data: {
+        ...(items && { items: items as unknown as object }),
+        ...(copy && { diagnosis: copy.diagnostico, solution: copy.solucion, notes: copy.titulo }),
+        ...(str(b.plazo) && { timeline: str(b.plazo) }),
+        ...(str(b.formaDePago) && { paymentTerms: str(b.formaDePago) }),
+        ...(validezDias && { validUntil: new Date(Date.now() + validezDias * 24 * 60 * 60 * 1000) }),
+      },
+    })
+    return { ok: true, id: updated.id, ...proposalSummary(updated) }
+  },
+
+  // Juanba sent the link to the lead: views count from now on and the lead moves to "proposal"
+  async 'proposals.mark_sent'(b) {
+    const proposal = await prisma.proposal.update({ where: { id: str(b.id) }, data: { status: 'enviada', sentAt: new Date() } })
+    if (proposal.leadId) {
+      const lead = await prisma.lead.findUnique({ where: { id: proposal.leadId } })
+      if (lead && ['NEW', 'CONTACTED', 'QUALIFIED'].includes(lead.status)) {
+        const today = new Date().toLocaleDateString('es-AR', { timeZone: TZ })
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: { status: 'PROPOSAL', notes: `${lead.notes ?? ''}\n\n📄 ${today}: propuesta enviada ${proposalUrl(proposal.slug)}`.trim() },
+        })
+      }
+    }
+    return { ok: true, id: proposal.id, ...proposalSummary(proposal) }
+  },
+
+  async 'proposals.list'(b) {
+    const q = str(b.q)
+    const proposals = await prisma.proposal.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })
+    const found = proposals.filter((p) => (!str(b.leadId) || p.leadId === str(b.leadId)) && (!q || matches(q, p.clientName, p.business))).slice(0, 10)
+    return { total: found.length, propuestas: found.map((p) => ({ id: p.id, ...proposalSummary(p) })) }
   },
 
   // Monthly production. Default period: next month from the 20th on, otherwise the current one
