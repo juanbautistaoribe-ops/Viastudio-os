@@ -269,6 +269,24 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     }
   },
 
+  // Client plan (what monthly production is built from) and notes
+  async 'clients.update'(b) {
+    const id = str(b.id)
+    const client = await prisma.client.findUnique({ where: { id } })
+    if (!client) throw new Error('Cliente no encontrado')
+    const planType = str(b.planType).toLowerCase()
+    if (planType && !['unico', 'personalizado'].includes(planType)) throw new Error('planType debe ser "unico" o "personalizado"')
+    const updated = await prisma.client.update({
+      where: { id },
+      data: {
+        ...(planType && { planType }),
+        ...(str(b.planNotes) && { planNotes: str(b.planNotes) }),
+        ...(str(b.notes) && { notes: client.notes ? `${client.notes}\n\n${str(b.notes)}` : str(b.notes) }),
+      },
+    })
+    return { ok: true, cliente: { id: updated.id, negocio: updated.company, plan: updated.planType, detalle_plan: updated.planNotes } }
+  },
+
   async 'tasks.list'(b) {
     const q = str(b.q)
     const all = str(b.status) === 'all'

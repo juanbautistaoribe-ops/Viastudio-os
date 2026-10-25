@@ -6,17 +6,18 @@ import { prisma } from '@/lib/prisma'
 const TZ_OFFSET = '-03:00'
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
-type Kind = 'reels' | 'placas' | 'anuncios' | 'historias'
+type Kind = 'reels' | 'placas' | 'creativos' | 'anuncios' | 'historias'
 type Deliverables = Partial<Record<Kind, number>>
 type Extras = { metricas?: boolean; consultoria?: boolean }
 
-const PLAN_UNICO: Deliverables = { reels: 4, placas: 15, anuncios: 3 }
+const PLAN_UNICO: Deliverables = { reels: 4, placas: 14, anuncios: 3 }
 const LABEL: Record<Kind, [string, string]> = {
-  reels: ['reel', 'reels'], placas: ['placa', 'placas'], anuncios: ['anuncio', 'anuncios'], historias: ['historia', 'historias'],
+  reels: ['reel', 'reels'], placas: ['placa', 'placas'], creativos: ['creativo', 'creativos'], anuncios: ['anuncio', 'anuncios'], historias: ['historia', 'historias'],
 }
 const KEYWORDS: Record<Kind, RegExp> = {
   reels: /reels?|videos?/,
   placas: /placas?|posteos?|posts?|flyers?|carruseles?/,
+  creativos: /creativos?|piezas?/,
   anuncios: /anuncios?|pautas?|campanas?|ads/,
   historias: /historias?|stories/,
 }
