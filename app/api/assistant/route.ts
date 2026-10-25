@@ -204,6 +204,12 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     return { ok: true, id: proposal.id, ...proposalSummary(proposal) }
   },
 
+  async 'proposals.delete'(b) {
+    const proposal = await prisma.proposal.delete({ where: { id: str(b.id) } }).catch(() => null)
+    if (!proposal) throw new Error('Propuesta no encontrada')
+    return { ok: true, eliminada: `${proposal.clientName}${proposal.business ? ` (${proposal.business})` : ''}` }
+  },
+
   async 'proposals.list'(b) {
     const q = str(b.q)
     const proposals = await prisma.proposal.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })
