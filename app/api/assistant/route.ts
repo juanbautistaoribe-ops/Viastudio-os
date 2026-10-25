@@ -235,6 +235,33 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     return { ok: true, ingreso: { id: income.id, concepto: concept, monto: income.amount, moneda: income.currency, estado: income.status.toLowerCase(), periodo: income.period } }
   },
 
+  async 'income.list'(b) {
+    const q = str(b.q)
+    const status = str(b.status).toUpperCase()
+    const period = /^\d{4}-\d{2}$/.test(str(b.period)) ? str(b.period) : currentPeriod()
+    const incomes = await prisma.income.findMany({
+      where: { period, ...(['INVOICED', 'COLLECTED', 'OVERDUE'].includes(status) && { status: status as 'INVOICED' | 'COLLECTED' | 'OVERDUE' }) },
+      include: { client: { select: { name: true, company: true } } },
+      orderBy: { createdAt: 'asc' },
+    })
+    const found = incomes.filter((i) => !q || matches(q, i.concept, i.client?.company, i.client?.name, i.notes))
+    return {
+      periodo: period,
+      total: found.length,
+      ingresos: found.map((i) => ({ id: i.id, cliente: i.client?.company ?? null, concepto: i.concept, monto: i.amount, moneda: i.currency, estado: i.status.toLowerCase(), cobrado_el: i.collectedAt })),
+    }
+  },
+
+  async 'income.collect'(b) {
+    const ids = (Array.isArray(b.ids) ? b.ids : [b.id]).map(str).filter(Boolean)
+    if (!ids.length) throw new Error('Faltan los ids de los ingresos')
+    const collectedAt = date(b.collectedAt) ?? new Date()
+    const { count } = await prisma.income.updateMany({ where: { id: { in: ids } }, data: { status: 'COLLECTED', collectedAt } })
+    if (!count) throw new Error('No encontré esos ingresos')
+    const updated = await prisma.income.findMany({ where: { id: { in: ids } }, include: { client: { select: { company: true } } } })
+    return { ok: true, marcados: count, ingresos: updated.map((i) => ({ cliente: i.client?.company ?? null, concepto: i.concept, monto: i.amount, moneda: i.currency })) }
+  },
+
   async 'expense.create'(b) {
     const amount = num(b.amount)
     const concept = str(b.concept)
