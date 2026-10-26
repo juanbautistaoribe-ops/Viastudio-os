@@ -36,11 +36,12 @@ export function buildItems(inputs: ServiceInput[]): ProposalItem[] {
 
 // WhatsApp messages go out through the n8n notify webhook (it holds the Green API credentials).
 // Without chatId the message goes to Juanba; with chatId, the bot sends it to that lead.
-async function sendWhatsApp(message: string, chatId?: string) {
+// `tipo` tells n8n how to store the chat state (a reactivation leaves the bot answering normally).
+async function sendWhatsApp(message: string, chatId?: string, tipo?: string) {
   const res = await fetch(NOTIFY_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-webhook-secret': process.env.LEADS_WEBHOOK_SECRET ?? '' },
-    body: JSON.stringify({ message, ...(chatId && { chatId }) }),
+    body: JSON.stringify({ message, ...(chatId && { chatId }), ...(tipo && { tipo }) }),
   })
   if (!res.ok) throw new Error(`n8n respondió ${res.status}`)
 }
@@ -54,8 +55,8 @@ export async function notifyJuanba(message: string) {
   }
 }
 
-export async function sendToLead(chatId: string, message: string) {
-  await sendWhatsApp(message, chatId)
+export async function sendToLead(chatId: string, message: string, tipo?: string) {
+  await sendWhatsApp(message, chatId, tipo)
 }
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0]

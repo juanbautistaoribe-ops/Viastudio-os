@@ -87,8 +87,9 @@ export async function POST(req: NextRequest) {
     // Complaints from current clients are not sales leads
     if (tipo === 'reclamo') return NextResponse.json({ ok: true, skipped: 'reclamo' })
 
+    // A cold lead (LOST + "frio") that comes back is the same lead, not a new one
     const existing = await prisma.lead.findFirst({
-      where: { phone, status: { notIn: ['WON', 'LOST'] } },
+      where: { phone, OR: [{ status: { notIn: ['WON', 'LOST'] } }, { status: 'LOST', tags: { has: 'frio' } }] },
       orderBy: { createdAt: 'desc' },
     })
 
@@ -147,14 +148,14 @@ export async function POST(req: NextRequest) {
       lead = await prisma.lead.update({
         where: { id: existing.id },
         data: {
-          status: existing.status === 'NEW' || existing.status === 'CONTACTED' ? 'QUALIFIED' : existing.status,
+          status: ['NEW', 'CONTACTED', 'LOST'].includes(existing.status) ? 'QUALIFIED' : existing.status,
           notes: existing.notes ? `${existing.notes}\n\n${notes}` : notes,
           nextAction,
           nextActionDate,
           ...(upgrade && { potentialValue: amount, currency, priority }),
           ...(services.length > 0 && { services: Array.from(new Set([...existing.services, ...services])) }),
           ...(website && !existing.website && { website }),
-          tags: Array.from(new Set([...existing.tags, ...tags])),
+          tags: Array.from(new Set([...existing.tags.filter((t) => t !== 'frio'), ...tags])),
         },
       })
     } else {

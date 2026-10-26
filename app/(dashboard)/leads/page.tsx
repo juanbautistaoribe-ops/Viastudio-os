@@ -30,10 +30,31 @@ const PRIORITY_DOT: Record<string, string> = {
   high: '#EF4444', medium: '#F59E0B', low: '#3B82F6',
 }
 
+// Cold leads and their reactivation state (tags set by the bot and the monthly reactivation)
+const isCold = (l: Lead) => l.tags.includes('frio') || l.tags.includes('reactivado')
+function coldBadge(l: Lead) {
+  if (l.tags.includes('reac-respondio')) return { label: '💬 Respondió la reactivación', color: '#22C55E' }
+  const last = l.tags.map((t) => t.match(/^reac-(\d{4})-(\d{2})-(\d{2})$/)).filter(Boolean).pop()
+  if (last) return { label: `↻ Reactivado ${Number(last[3])}/${Number(last[2])}`, color: '#3B82F6' }
+  if (l.tags.includes('frio')) return { label: '❄️ Frío', color: '#60A5FA' }
+  return null
+}
+
+function ColdBadge({ lead }: { lead: Lead }) {
+  const badge = coldBadge(lead)
+  if (!badge) return null
+  return (
+    <span className="inline-block mb-2 mr-1 px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: `${badge.color}22`, color: badge.color }}>
+      {badge.label}
+    </span>
+  )
+}
+
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [onlyCold, setOnlyCold] = useState(false)
   const [view, setView] = useState<'pipeline' | 'list' | 'proposals'>('pipeline')
   const [proposals, setProposals] = useState<ProposalRow[]>([])
   const [modalOpen, setModalOpen] = useState(false)
@@ -73,11 +94,14 @@ export default function LeadsPage() {
 
   const filtered = useMemo(() => {
     return leads.filter((l) =>
-      !search ||
-      l.name.toLowerCase().includes(search.toLowerCase()) ||
-      l.company.toLowerCase().includes(search.toLowerCase())
+      (!onlyCold || isCold(l)) && (
+        !search ||
+        l.name.toLowerCase().includes(search.toLowerCase()) ||
+        l.company.toLowerCase().includes(search.toLowerCase())
+      )
     )
-  }, [leads, search])
+  }, [leads, search, onlyCold])
+  const coldCount = leads.filter(isCold).length
 
   const activeLeads = leads.filter(l => !['won', 'lost'].includes(l.status))
   const pipelineARS = activeLeads.filter(l => (l.currency ?? 'ARS') === 'ARS').reduce((a, l) => a + (l.potentialValue ?? 0), 0)
@@ -173,6 +197,16 @@ export default function LeadsPage() {
               </button>
             ))}
           </div>
+          {coldCount > 0 && (
+            <button
+              onClick={() => setOnlyCold((v) => !v)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+              style={{ background: onlyCold ? '#60A5FA22' : 'var(--color-surface-2)', color: onlyCold ? '#60A5FA' : 'var(--color-text-muted)', border: `1px solid ${onlyCold ? '#60A5FA66' : 'var(--color-border-subtle)'}` }}
+              title="Leads que dejaron de responder y su reactivación"
+            >
+              ❄️ Fríos ({coldCount})
+            </button>
+          )}
         </div>
 
         {loading && (
@@ -342,6 +376,7 @@ function LeadCard({ lead, proposal, delay = 0, onEdit, onDelete, onConvert, onDr
         </div>
       </div>
       <p className="text-[10px] mb-2" style={{ color: 'var(--color-text-muted)' }}>{lead.name}</p>
+      <ColdBadge lead={lead} />
       {proposal && (() => {
         const badge = proposalBadge(proposal)
         return (
@@ -384,6 +419,7 @@ function LeadRow({ lead, isLast, onEdit, onDelete, onConvert }: {
           <div>
             <p className="font-semibold" style={{ color: 'var(--color-text)' }}>{lead.company}</p>
             <p style={{ color: 'var(--color-text-muted)' }}>{lead.name}</p>
+            {coldBadge(lead) && <p className="text-[10px] font-semibold" style={{ color: coldBadge(lead)!.color }}>{coldBadge(lead)!.label}</p>}
           </div>
         </div>
       </td>

@@ -6,9 +6,10 @@ import { getDolarBlue } from '@/lib/dolar'
 import { onboardingDraft, startOnboarding } from '@/lib/onboarding'
 import { botMetrics } from '@/lib/bot-metrics'
 import { buildItems, createProposal, dueFollowups, followupMessage, notifyJuanba, proposalMessage, proposalSummary, proposalUrl, sendToLead, writeCopy, type ServiceInput } from '@/lib/proposals'
+import { monthlyReactivationCheck, reactivationProposal, reactivationReport, sendReactivation } from '@/lib/reactivation'
 import { buildPlan, createProduction, formatProposal, isLastBusinessDay, nextPeriod, periodOf, type Override } from '@/lib/production'
 
-export const maxDuration = 30
+export const maxDuration = 60 // reactivation sends up to 20 spaced messages
 
 // Internal WhatsApp assistant (n8n): one endpoint, `action` picks the operation.
 // Confirmation of important changes happens in the agent conversation, before it calls this.
@@ -310,6 +311,21 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     const proposals = await prisma.proposal.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })
     const found = proposals.filter((p) => (!str(b.leadId) || p.leadId === str(b.leadId)) && (!q || matches(q, p.clientName, p.business))).slice(0, 10)
     return { total: found.length, propuestas: found.map((p) => ({ id: p.id, ...proposalSummary(p) })) }
+  },
+
+  // Cold leads. Nothing goes out until Juanba approves the list ("mandales")
+  async 'reactivation.propose'(b) {
+    if (b.auto === true) return monthlyReactivationCheck()
+    return reactivationProposal()
+  },
+
+  async 'reactivation.send'(b) {
+    const excluir = Array.isArray(b.excluir) ? b.excluir.map((x) => str(x)).filter(Boolean) : str(b.excluir) ? [str(b.excluir)] : []
+    return sendReactivation({ excluir, mensaje: str(b.mensaje) || undefined }, matches)
+  },
+
+  async 'reactivation.report'(b) {
+    return reactivationReport(num(b.dias) ?? 45)
   },
 
   // Monthly production. Default period: next month from the 20th on, otherwise the current one
