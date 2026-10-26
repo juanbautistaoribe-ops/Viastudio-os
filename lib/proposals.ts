@@ -131,13 +131,14 @@ export async function writeCopy(input: { nombre: string; negocio?: string | null
   if (!process.env.ANTHROPIC_API_KEY) return fallback
 
   try {
-    const client = new Anthropic()
+    // Short timeout: the assistant waits on this call; the template copy is the fallback
+    const client = new Anthropic({ timeout: 35_000, maxRetries: 0 })
     const response = await client.beta.messages.create({
       model: 'claude-opus-5-5',
       max_tokens: 4000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      output_config: { effort: 'medium', format: { type: 'json_schema', schema: COPY_SCHEMA } },
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: COPY_SCHEMA } },
       system: SYSTEM,
       messages: [{
         role: 'user',

@@ -45,9 +45,11 @@ function norm(s: string | null | undefined) {
   return (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
 
+// Punctuation is ignored: the agent often passes names as shown in notices, e.g. "Titi (Lostikislocos)"
 function matches(q: string, ...fields: (string | null | undefined | string[])[]) {
-  const words = norm(q).split(/\s+/).filter(Boolean)
-  const hay = norm(fields.flat().join(' '))
+  const clean = (s: string) => norm(s).replace(/[^\p{L}\p{N}\s]/gu, ' ')
+  const words = clean(q).split(/\s+/).filter(Boolean)
+  const hay = clean(fields.flat().join(' '))
   return words.every((w) => hay.includes(w))
 }
 
@@ -380,6 +382,15 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
       .filter((l) => !q || matches(q, l.name, l.company, l.notes, l.tags, l.services, l.phone))
       .slice(0, 10)
     return { total: found.length, leads: found.map(leadOut) }
+  },
+
+  // Juanba confirms first (test leads, spam, duplicates). Its proposals and activity go with it
+  async 'leads.delete'(b) {
+    const lead = await findLead(b)
+    await prisma.proposal.deleteMany({ where: { leadId: lead.id } })
+    await prisma.activity.deleteMany({ where: { entityId: lead.id } })
+    await prisma.lead.delete({ where: { id: lead.id } })
+    return { ok: true, eliminado: `${lead.name}${lead.company && lead.company !== lead.name ? ` (${lead.company})` : ''}` }
   },
 
   async 'leads.update'(b) {

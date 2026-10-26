@@ -105,7 +105,8 @@ export async function POST(req: NextRequest) {
     }
 
     // New bot fields, with fallback to the previous handoff format
-    const nombre = str(body.nombre) || 'Lead WhatsApp'
+    // The bot marks names taken from the WhatsApp profile; the CRM keeps just the name
+    const nombre = str(body.nombre).replace(/\s*\(perfil de whatsapp\)/i, '').trim() || 'Lead WhatsApp'
     const servicio = str(body.servicio)
     const rubro = str(body.rubro) || str(body.industria)
     const datosClave = str(body.datos_clave) || str(body.dolor)
