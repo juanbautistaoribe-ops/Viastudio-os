@@ -4,8 +4,8 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/signup')
-  // '/p/…' = public proposal pages shared with leads
-  const isPublicRoute = pathname === '/' || pathname.startsWith('/p/')
+  // '/p/…' = public proposal pages shared with leads; '/r/…' = monthly ad reports for clients
+  const isPublicRoute = pathname === '/' || pathname.startsWith('/p/') || pathname.startsWith('/r/')
   const isApiRoute = pathname.startsWith('/api/')
   const isStaticRoute = pathname.startsWith('/_next/') || pathname.includes('.')
 

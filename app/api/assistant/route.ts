@@ -6,6 +6,8 @@ import { getDolarBlue } from '@/lib/dolar'
 import { onboardingDraft, startOnboarding } from '@/lib/onboarding'
 import { botMetrics } from '@/lib/bot-metrics'
 import { buildItems, createProposal, dueFollowups, followupMessage, notifyJuanba, proposalMessage, proposalSummary, proposalUrl, sendToLead, writeCopy, type ServiceInput } from '@/lib/proposals'
+import { adAccounts, metaConfigured } from '@/lib/meta'
+import { buildReports, lastPeriod, monthlyReportsCheck, reportsProposal, reportUrl, sendReports } from '@/lib/meta-reports'
 import { monthlyReactivationCheck, reactivationProposal, reactivationReport, sendReactivation } from '@/lib/reactivation'
 import { buildPlan, createProduction, formatProposal, isLastBusinessDay, nextPeriod, periodOf, type Override } from '@/lib/production'
 
@@ -334,9 +336,66 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   // Cold leads. Nothing goes out until Juanba approves the list ("mandales")
+  // auto: the daily 7:00 run (n8n "Run Reactivation Check") also drives the monthly Meta reports
   async 'reactivation.propose'(b) {
-    if (b.auto === true) return monthlyReactivationCheck()
+    if (b.auto === true) {
+      const reports = await monthlyReportsCheck().catch((error) => ({ error: String(error) }))
+      return { ...(await monthlyReactivationCheck()), reportes: reports }
+    }
     return reactivationProposal()
+  },
+
+  // Ad accounts the Meta token can read, with the client each one is linked to (or the likely match)
+  async 'meta.accounts'() {
+    if (!metaConfigured()) throw new Error('Todavía no está conectado Meta: falta cargar META_ACCESS_TOKEN en Vercel')
+    const [accounts, clients] = await Promise.all([adAccounts(), prisma.client.findMany({ where: { status: 'ACTIVE' } })])
+    const linkedTo = (id: string) => clients.find((c) => c.metaAdAccountId === id)
+    const guess = (name: string, business: string | null) =>
+      clients.filter((c) => !c.metaAdAccountId && [c.company, c.name].some((n) => matches(n, name) || (business && matches(n, business))))
+    return {
+      cuentas: accounts.map((a) => ({
+        id: a.id, nombre: a.name, portafolio: a.business, estado: a.status, moneda: a.currency,
+        cliente: linkedTo(a.id)?.company ?? null,
+        ...(!linkedTo(a.id) && { posible_cliente: guess(a.name, a.business).map((c) => c.company)[0] ?? null }),
+      })),
+      clientes_sin_cuenta: clients.filter((c) => !c.metaAdAccountId).map((c) => c.company),
+    }
+  },
+
+  // links: [{"cliente":"Kleist","cuenta":"act_123"}]; cuenta "" unlinks
+  async 'meta.link'(b) {
+    const links = Array.isArray(b.links) ? b.links as Body[] : [{ cliente: b.cliente, cuenta: b.cuenta }]
+    const accounts = metaConfigured() ? await adAccounts() : []
+    const done: string[] = []
+    for (const l of links) {
+      const client = await findClient({ q: str(l.cliente) })
+      const q = str(l.cuenta)
+      const account = q ? accounts.find((a) => a.id === q || a.id === `act_${q}`) ?? pickOne(accounts.filter((a) => matches(q, a.name)), 'cuenta', (a) => `${a.name} (${a.id})`, q) : null
+      await prisma.client.update({ where: { id: client.id }, data: { metaAdAccountId: account?.id ?? null } })
+      done.push(account ? `${client.company} → ${account.name}` : `${client.company} sin cuenta`)
+    }
+    return { ok: true, vinculados: done }
+  },
+
+  // Builds (or rebuilds) the drafts and returns the list for Juanba. Default: last month
+  async 'reports.propose'(b) {
+    const period = normPeriod(str(b.period)) || lastPeriod()
+    const only = str(b.cliente) ? [(await findClient({ q: str(b.cliente) })).id] : undefined
+    const { failed } = await buildReports(period, only)
+    const proposal = await reportsProposal(period)
+    return { ...proposal, no_se_pudieron_armar: failed }
+  },
+
+  async 'reports.send'(b) {
+    const period = normPeriod(str(b.period)) || lastPeriod()
+    const excluir = Array.isArray(b.excluir) ? b.excluir.map(str).filter(Boolean) : str(b.excluir) ? [str(b.excluir)] : []
+    return sendReports(period, excluir, matches)
+  },
+
+  async 'reports.status'(b) {
+    const period = normPeriod(str(b.period)) || lastPeriod()
+    const reports = await prisma.metaReport.findMany({ where: { period }, include: { client: { select: { company: true } } } })
+    return { periodo: period, reportes: reports.map((r) => ({ cliente: r.client.company, estado: r.status, vistas: r.viewCount, link: reportUrl(r.slug) })) }
   },
 
   async 'reactivation.send'(b) {
