@@ -591,6 +591,40 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     }
   },
 
+  // Expected billing for a month: active clients' monthly fee (minus those whose end date has passed
+  // by then) plus incomes already loaded for that month that aren't a client's monthly fee
+  async 'income.forecast'(b) {
+    const period = /^\d{4}-\d{2}$/.test(str(b.period)) ? str(b.period) : currentPeriod()
+    const start = new Date(`${period}-01T00:00:00-03:00`)
+    const [y, m] = period.split('-').map(Number)
+    const end = new Date(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01T00:00:00-03:00`)
+    const [clients, incomes, blue] = await Promise.all([
+      prisma.client.findMany({ where: { status: 'ACTIVE' }, orderBy: { monthlyValue: 'desc' } }),
+      prisma.income.findMany({ where: { period }, include: { client: { select: { company: true } } } }),
+      getDolarBlue(),
+    ])
+    const billed = clients.filter((c) => c.startDate < end && (!c.endDate || c.endDate > start))
+    const ended = clients.filter((c) => c.endDate && c.endDate <= start)
+    const billedIds = new Set(billed.map((c) => c.id))
+    // A loaded income from a billed client counts as its monthly fee, not as extra
+    const extras = incomes.filter((i) => !i.clientId || !billedIds.has(i.clientId))
+    const total = (rows: { amount: number; currency: string }[]) => ({
+      ARS: rows.filter((r) => r.currency !== 'USD').reduce((a, r) => a + r.amount, 0),
+      USD: rows.filter((r) => r.currency === 'USD').reduce((a, r) => a + r.amount, 0),
+    })
+    const totals = total([...billed.map((c) => ({ amount: c.monthlyValue, currency: c.currency })), ...extras])
+    return {
+      periodo: period,
+      abonos_mensuales: billed.map((c) => ({ cliente: c.company, monto: c.monthlyValue, moneda: c.currency })),
+      clientes_sin_valor_cargado: billed.filter((c) => !c.monthlyValue).map((c) => c.company),
+      extras_ya_cargados: extras.map((i) => ({ cliente: i.client?.company ?? null, concepto: i.concept, monto: i.amount, moneda: i.currency, estado: i.status.toLowerCase() })),
+      no_se_facturan_por_baja: ended.map((c) => c.company),
+      total: totals,
+      dolar_blue_venta: blue?.venta ?? null,
+      total_en_pesos: blue ? Math.round(totals.ARS + totals.USD * blue.venta) : null,
+    }
+  },
+
   async 'income.collect'(b) {
     const ids = (Array.isArray(b.ids) ? b.ids : [b.id]).map(str).filter(Boolean)
     if (!ids.length) throw new Error('Faltan los ids de los ingresos')
