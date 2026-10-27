@@ -61,6 +61,24 @@ function currentPeriod() {
   return new Date().toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 7)
 }
 
+// "2026-9" or "2026-09" → "2026-09"; anything else → ''
+function normPeriod(p: string) {
+  const m = p.match(/^(\d{4})-(\d{1,2})$/)
+  return m && Number(m[2]) >= 1 && Number(m[2]) <= 12 ? `${m[1]}-${m[2].padStart(2, '0')}` : ''
+}
+
+// First instant of the month and of the next one, Argentina time
+function periodRange(period: string) {
+  const [y, m] = period.split('-').map(Number)
+  const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+  return { start: new Date(`${period}-01T00:00:00-03:00`), end: new Date(`${next}-01T00:00:00-03:00`) }
+}
+
+function monthName(period: string) {
+  const p = normPeriod(period)
+  return p ? new Date(`${p}-15T12:00:00-03:00`).toLocaleDateString('es-AR', { timeZone: TZ, month: 'long' }) : period
+}
+
 // Start/end of today in Argentina (UTC-3, no DST), as UTC instants
 function todayRangeAR() {
   const ymd = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
@@ -376,11 +394,14 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   async 'leads.search'(b) {
     const q = str(b.q)
     const status = str(b.status).toUpperCase()
-    const leads = await prisma.lead.findMany({ orderBy: { updatedAt: 'desc' }, take: 300 })
+    // days: leads that came in recently (1 = today, Argentina time)
+    const days = num(b.days)
+    const since = days ? new Date(todayRangeAR().start.getTime() - (days - 1) * 24 * 60 * 60 * 1000) : null
+    const leads = await prisma.lead.findMany({ where: since ? { createdAt: { gte: since } } : undefined, orderBy: { updatedAt: 'desc' }, take: 300 })
     const found = leads
       .filter((l) => (status ? l.status === status : true))
       .filter((l) => !q || matches(q, l.name, l.company, l.notes, l.tags, l.services, l.phone))
-      .slice(0, 10)
+      .slice(0, since ? 30 : 10)
     return { total: found.length, leads: found.map(leadOut) }
   },
 
@@ -481,6 +502,33 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     }
   },
 
+  // One client's file: plan, payments, open work, this month's production, upcoming events
+  async 'clients.detail'(b) {
+    const c = await findClient(b)
+    const { start } = todayRangeAR()
+    const period = currentPeriod()
+    const [tasks, incomes, events] = await Promise.all([
+      prisma.task.findMany({ where: { clientId: c.id, status: { notIn: ['DONE', 'CANCELLED'] } }, orderBy: { dueDate: 'asc' } }),
+      prisma.income.findMany({ where: { clientId: c.id }, orderBy: { createdAt: 'desc' }, take: 6 }),
+      prisma.calendarEvent.findMany({ where: { clientId: c.id, startDate: { gte: start } }, orderBy: { startDate: 'asc' }, take: 5 }),
+    ])
+    const prod = await prisma.task.findMany({ where: { clientId: c.id, tags: { has: `prod-${period}` } }, select: { status: true } })
+    const owed = incomes.filter((i) => i.status !== 'COLLECTED')
+    return {
+      cliente: c.company, contacto: c.name, telefono: c.phone || null, estado: c.status.toLowerCase(), rubro: c.industry,
+      abono: money(c.monthlyValue, c.currency), plan: c.planType, detalle_plan: c.planNotes,
+      cliente_desde: c.startDate, baja_desde: c.endDate,
+      debe: owed.length ? owed.map((i) => `${monthName(i.period)}: ${money(i.amount, i.currency)}${i.status === 'OVERDUE' ? ' (vencido)' : ''}`) : 'Nada',
+      ultimos_pagos: incomes.filter((i) => i.status === 'COLLECTED').slice(0, 3).map((i) => ({ periodo: normPeriod(i.period) || i.period, monto: money(i.amount, i.currency), cobrado_el: i.collectedAt })),
+      produccion_del_mes: prod.length ? `${prod.filter((t) => t.status === 'DONE').length} de ${prod.length} hechas` : 'No cargada',
+      tareas_abiertas: tasks.length,
+      tareas_vencidas: tasks.filter((t) => t.dueDate && t.dueDate < start).length,
+      proximas_tareas: tasks.slice(0, 5).map((t) => ({ titulo: t.title, vence: t.dueDate })),
+      proximos_eventos: events.map((e) => ({ titulo: e.title, inicio: e.startDate, hora_ar: e.allDay ? null : hora(e.startDate) })),
+      notas: c.notes ? c.notes.slice(-500) : null,
+    }
+  },
+
   // Client plan (what monthly production is built from) and notes
   async 'clients.update'(b) {
     const client = await findClient(b)
@@ -499,6 +547,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
         ...(endDate && { endDate }),
         ...(b.cancelEnd === true && { endDate: null }),
         ...(planType && { planType }),
+        ...(str(b.phone) && { phone: str(b.phone) }),
         ...(str(b.planNotes) && { planNotes: str(b.planNotes) }),
         ...(notes && { notes: client.notes ? `${client.notes}\n\n${notes}` : notes }),
       },
@@ -594,10 +643,8 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   // Expected billing for a month: active clients' monthly fee (minus those whose end date has passed
   // by then) plus incomes already loaded for that month that aren't a client's monthly fee
   async 'income.forecast'(b) {
-    const period = /^\d{4}-\d{2}$/.test(str(b.period)) ? str(b.period) : currentPeriod()
-    const start = new Date(`${period}-01T00:00:00-03:00`)
-    const [y, m] = period.split('-').map(Number)
-    const end = new Date(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01T00:00:00-03:00`)
+    const period = normPeriod(str(b.period)) || currentPeriod()
+    const { start, end } = periodRange(period)
     const [clients, incomes, blue] = await Promise.all([
       prisma.client.findMany({ where: { status: 'ACTIVE' }, orderBy: { monthlyValue: 'desc' } }),
       prisma.income.findMany({ where: { period }, include: { client: { select: { company: true } } } }),
@@ -622,6 +669,96 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
       total: totals,
       dolar_blue_venta: blue?.venta ?? null,
       total_en_pesos: blue ? Math.round(totals.ARS + totals.USD * blue.venta) : null,
+    }
+  },
+
+  // Everything billed and not collected, any month, grouped by client; plus active clients with
+  // nothing loaded for the current month (not billed yet)
+  async 'income.pending'() {
+    const period = currentPeriod()
+    const [pending, clients, loaded] = await Promise.all([
+      prisma.income.findMany({ where: { status: { in: ['INVOICED', 'OVERDUE'] } }, include: { client: { select: { company: true } } }, orderBy: { period: 'asc' } }),
+      prisma.client.findMany({ where: { status: 'ACTIVE' } }),
+      prisma.income.findMany({ where: { period }, select: { clientId: true } }),
+    ])
+    const byClient = new Map<string, typeof pending>()
+    for (const i of pending) {
+      const key = i.client?.company ?? i.concept
+      byClient.set(key, [...(byClient.get(key) ?? []), i])
+    }
+    const billedIds = new Set(loaded.map((i) => i.clientId))
+    return {
+      deben: [...byClient.entries()].map(([cliente, items]) => ({
+        cliente,
+        total: money(items.reduce((a, i) => a + i.amount, 0), items[0].currency),
+        ingresos: items.map((i) => ({ id: i.id, periodo: normPeriod(i.period), concepto: i.concept, monto: i.amount, moneda: i.currency, estado: i.status === 'OVERDUE' ? 'vencido' : 'facturado' })),
+      })),
+      total: { ARS: pending.filter((i) => i.currency !== 'USD').reduce((a, i) => a + i.amount, 0), USD: pending.filter((i) => i.currency === 'USD').reduce((a, i) => a + i.amount, 0) },
+      sin_facturar_este_mes: clients.filter((c) => !billedIds.has(c.id) && c.monthlyValue > 0).map((c) => ({ cliente: c.company, abono: money(c.monthlyValue, c.currency) })),
+    }
+  },
+
+  // Payment reminder to a client over WhatsApp. preview:true returns the text without sending;
+  // Juanba approves it in the conversation before the real send
+  async 'income.remind'(b) {
+    const client = await findClient({ ...b, q: str(b.cliente) || str(b.q) })
+    const pending = await prisma.income.findMany({ where: { clientId: client.id, status: { in: ['INVOICED', 'OVERDUE'] } }, orderBy: { period: 'asc' } })
+    if (!pending.length) throw new Error(`${client.company} no tiene ingresos pendientes de cobro`)
+    const contacts = await prisma.contact.findMany({ where: { clientId: client.id }, orderBy: { isPrimary: 'desc' } })
+    const phone = (client.phone || contacts.find((c) => c.phone)?.phone || '').replace(/\D/g, '')
+    const total = money(pending.reduce((a, i) => a + i.amount, 0), pending[0].currency)
+    const months = [...new Set(pending.map((i) => monthName(i.period)))].join(' y ')
+    const mensaje = str(b.mensaje)
+      || `¡Hola ${client.name.trim().split(/\s+/)[0]}! 👋 ¿Cómo va? Te escribo para recordarte el pago de ${months} (${total}). Cuando lo hagas, mandame el comprobante por acá así lo registro. ¡Gracias!`
+    if (b.preview === true || !phone) {
+      return { cliente: client.company, telefono: phone || null, mensaje, ...(!phone && { falta: 'No tiene teléfono cargado: pedile el número a Juanba y guardalo con clients.update (phone)' }) }
+    }
+    await sendToLead(`${phone}@c.us`, mensaje, 'cobro')
+    const today = new Date().toLocaleDateString('es-AR', { timeZone: TZ })
+    await prisma.income.updateMany({ where: { id: { in: pending.map((i) => i.id) } }, data: { notes: `Recordatorio de pago enviado el ${today}` } })
+    return { ok: true, enviado_a: client.company, mensaje }
+  },
+
+  async 'expense.list'(b) {
+    const period = normPeriod(str(b.period)) || currentPeriod()
+    const { start, end } = periodRange(period)
+    const q = str(b.q)
+    const expenses = await prisma.expense.findMany({ where: { date: { gte: start, lt: end } }, include: { client: { select: { company: true } } }, orderBy: { date: 'asc' } })
+    const found = expenses.filter((e) => (!q || matches(q, e.concept, e.category, e.client?.company, e.notes)) && (!str(b.category) || norm(e.category) === norm(str(b.category))))
+    const byCategory: Record<string, number> = {}
+    for (const e of found) byCategory[e.category] = (byCategory[e.category] ?? 0) + e.amount * (e.currency === 'USD' ? e.exchangeRate ?? 0 : 1)
+    return {
+      periodo: period,
+      total: found.length,
+      gastos: found.map((e) => ({ id: e.id, fecha: e.date, concepto: e.concept, categoria: e.category, monto: e.amount, moneda: e.currency, fijo: e.type === 'FIXED', recurrente: e.recurring, cliente: e.client?.company ?? null })),
+      por_categoria_en_pesos: byCategory,
+    }
+  },
+
+  // Month P&L in pesos (USD at each record's exchange rate, or today's blue)
+  async 'finance.month'(b) {
+    const period = normPeriod(str(b.period)) || currentPeriod()
+    const { start, end } = periodRange(period)
+    const [incomes, expenses, blue] = await Promise.all([
+      prisma.income.findMany({ where: { period: { in: [period, period.replace(/-0(\d)$/, '-$1')] } } }),
+      prisma.expense.findMany({ where: { date: { gte: start, lt: end } } }),
+      getDolarBlue(),
+    ])
+    const ars = (r: { amount: number; currency: string; exchangeRate: number | null }) => r.currency === 'USD' ? r.amount * (r.exchangeRate ?? blue?.venta ?? 0) : r.amount
+    const sum = <T,>(arr: T[], f: (x: T) => number) => Math.round(arr.reduce((a, x) => a + f(x), 0))
+    const facturado = sum(incomes, ars)
+    const cobrado = sum(incomes.filter((i) => i.status === 'COLLECTED'), ars)
+    const gastos = sum(expenses, ars)
+    return {
+      periodo: period,
+      facturado,
+      cobrado,
+      pendiente_de_cobro: facturado - cobrado,
+      gastos,
+      ganancia_si_cobras_todo: facturado - gastos,
+      ganancia_con_lo_cobrado: cobrado - gastos,
+      margen: facturado ? `${Math.round(((facturado - gastos) / facturado) * 100)}%` : null,
+      aclaracion: 'Todo en pesos. Solo cuenta ingresos y gastos cargados en ViaStudio OS.',
     }
   },
 
