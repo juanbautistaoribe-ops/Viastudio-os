@@ -153,3 +153,13 @@ export function fileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
+
+// WhatsApp number in international digits. Argentine numbers come written many ways
+// ("3482 123456", "+54 9 3482…", "54 3482…", "03482…"); they all end up as 549 + area + number
+export function waPhone(p: string | null | undefined) {
+  let d = (p ?? '').replace(/\D/g, '').replace(/^00/, '')
+  if (d.startsWith('0')) d = d.slice(1)
+  if (d.startsWith('54') && !d.startsWith('549') && d.length === 12) return `549${d.slice(2)}`
+  if (d.length === 10) return `549${d}`
+  return d
+}

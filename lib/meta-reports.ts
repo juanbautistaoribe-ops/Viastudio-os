@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { randomBytes } from 'crypto'
 import { prisma } from '@/lib/prisma'
+import { waPhone } from '@/lib/utils'
 import { APP_URL, money, notifyJuanba, sendToLead } from '@/lib/proposals'
 import { accountReport, metaConfigured, previousPeriod, type ReportData } from '@/lib/meta'
 
@@ -122,8 +123,17 @@ export async function buildReports(period: string, only?: string[]) {
 type Row = Awaited<ReturnType<typeof reportsOf>>[number]
 
 async function reportsOf(period: string) {
-  return prisma.metaReport.findMany({ where: { period }, include: { client: true }, orderBy: { client: { company: 'asc' } } })
+  return prisma.metaReport.findMany({ where: { period }, include: { client: { include: { contacts: true } } }, orderBy: { client: { company: 'asc' } } })
 }
+
+// Who gets a client's report: the client's own WhatsApp plus every contact with a phone (e.g. owner and partner),
+// each greeted by name. The same number only once
+function recipients(client: Row['client']) {
+  const people = [{ name: client.name, phone: phoneOf(client.phone) }, ...client.contacts.map((c) => ({ name: c.name, phone: phoneOf(c.phone) }))]
+  return people.filter((p, i) => p.phone && people.findIndex((q) => q.phone === p.phone) === i)
+}
+
+const firstName = (name: string) => name.trim().split(/\s+/)[0]
 
 function oneLine(r: Row) {
   const d = r.data as unknown as ReportData
@@ -131,14 +141,15 @@ function oneLine(r: Row) {
   const delta = change(c.costPerResult ?? 0, d.previous.costPerResult ?? 0)
   const trend = c.costPerResult && delta !== null ? ` (${delta <= 0 ? '⬇️' : '⬆️'} ${Math.abs(delta)}% vs mes anterior)` : ''
   const res = c.spend ? `${fmtMoney(c.spend, d.account.currency)} → ${c.results} ${d.resultLabel}${c.costPerResult ? ` a ${fmtMoney(c.costPerResult, d.account.currency)}` : ''}${trend}` : 'sin inversión este mes'
-  return `• ${r.client.company}: ${res}\n  ${reportUrl(r.slug)}`
+  const to = recipients(r.client)
+  return `• ${r.client.company}: ${res}${to.length > 1 ? ` (va a ${to.map((p) => firstName(p.name)).join(' y ')})` : ''}\n  ${reportUrl(r.slug)}`
 }
 
 export async function reportsProposal(period: string) {
   const reports = await reportsOf(period)
   const drafts = reports.filter((r) => r.status === 'borrador')
   if (!drafts.length) return { total: 0, mensaje: null }
-  const noPhone = drafts.filter((r) => !phoneOf(r.client.phone))
+  const noPhone = drafts.filter((r) => !recipients(r.client).length)
   return {
     total: drafts.length,
     mensaje: [
@@ -150,10 +161,10 @@ export async function reportsProposal(period: string) {
   }
 }
 
-const phoneOf = (p: string | null | undefined) => (p ?? '').replace(/\D/g, '')
+const phoneOf = waPhone
 
-export function reportMessage(r: { slug: string; period: string; client: { name: string } }) {
-  return `¡Hola ${r.client.name.trim().split(/\s+/)[0]}! 👋 Te paso el reporte de tus anuncios de ${monthLabel(r.period)}:\n\n${reportUrl(r.slug)}\n\nAhí vas a ver cuánto se invirtió, qué resultados trajo y qué hacemos el mes que viene. Cualquier duda, escribime.`
+export function reportMessage(r: { slug: string; period: string }, name: string) {
+  return `¡Hola ${firstName(name)}! 👋 Te paso el reporte de tus anuncios de ${monthLabel(r.period)}:\n\n${reportUrl(r.slug)}\n\nAhí vas a ver cuánto se invirtió, qué resultados trajo y qué hacemos el mes que viene. Cualquier duda, escribime.`
 }
 
 export async function sendReports(period: string, excluir: string[], matches: (q: string, ...f: string[]) => boolean) {
@@ -162,17 +173,23 @@ export async function sendReports(period: string, excluir: string[], matches: (q
   const sent: string[] = []
   const failed: string[] = []
   for (const r of drafts) {
-    const phone = phoneOf(r.client.phone)
-    if (!phone) { failed.push(`${r.client.company} (sin teléfono)`); continue }
-    try {
-      // Same chat state as a payment reminder: if the client replies, Juanba answers, not the sales bot
-      await sendToLead(`${phone}@c.us`, reportMessage(r), 'cobro')
-      await prisma.metaReport.update({ where: { id: r.id }, data: { status: 'enviado', sentAt: new Date() } })
-      sent.push(r.client.company)
-    } catch {
-      failed.push(r.client.company)
+    const to = recipients(r.client)
+    if (!to.length) { failed.push(`${r.client.company} (sin teléfono)`); continue }
+    const ok: string[] = []
+    for (const p of to) {
+      try {
+        // Same chat state as a payment reminder: if the client replies, Juanba answers, not the sales bot
+        await sendToLead(`${p.phone}@c.us`, reportMessage(r, p.name), 'cobro')
+        ok.push(firstName(p.name))
+      } catch {
+        failed.push(`${r.client.company} (${firstName(p.name)})`)
+      }
+      await new Promise((res) => setTimeout(res, 1500))
     }
-    await new Promise((res) => setTimeout(res, 1500))
+    if (ok.length) {
+      await prisma.metaReport.update({ where: { id: r.id }, data: { status: 'enviado', sentAt: new Date() } })
+      sent.push(to.length > 1 ? `${r.client.company} (${ok.join(' y ')})` : r.client.company)
+    }
   }
   return { enviados: sent, fallaron: failed }
 }

@@ -7,6 +7,7 @@ import { onboardingDraft, startOnboarding } from '@/lib/onboarding'
 import { botMetrics } from '@/lib/bot-metrics'
 import { buildItems, createProposal, dueFollowups, followupMessage, notifyJuanba, proposalMessage, proposalSummary, proposalUrl, sendToLead, writeCopy, type ServiceInput } from '@/lib/proposals'
 import { adAccounts, metaConfigured } from '@/lib/meta'
+import { waPhone } from '@/lib/utils'
 import { buildReports, lastPeriod, monthlyReportsCheck, reportsProposal, reportUrl, sendReports } from '@/lib/meta-reports'
 import { monthlyReactivationCheck, reactivationProposal, reactivationReport, sendReactivation } from '@/lib/reactivation'
 import { buildPlan, createProduction, formatProposal, isLastBusinessDay, nextPeriod, periodOf, type Override } from '@/lib/production'
@@ -611,6 +612,27 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     }
   },
 
+  // Extra people of a client (partner, manager). The ones with a phone also get the monthly Meta report
+  async 'contacts.add'(b) {
+    const client = await findClient({ q: str(b.cliente) })
+    const name = str(b.nombre)
+    if (!name) throw new Error('Falta el nombre del contacto')
+    const phone = waPhone(str(b.telefono)) || null
+    const existing = (await prisma.contact.findMany({ where: { clientId: client.id } })).find((c) => matches(name, c.name))
+    const contact = existing
+      ? await prisma.contact.update({ where: { id: existing.id }, data: { ...(phone && { phone }), ...(str(b.rol) && { role: str(b.rol) }) } })
+      : await prisma.contact.create({ data: { clientId: client.id, name, role: str(b.rol), email: '', phone } })
+    return { ok: true, cliente: client.company, contacto: contact.name, rol: contact.role || null, telefono: contact.phone, actualizado: !!existing }
+  },
+
+  async 'contacts.remove'(b) {
+    const client = await findClient({ q: str(b.cliente) })
+    const contacts = await prisma.contact.findMany({ where: { clientId: client.id } })
+    const contact = pickOne(contacts.filter((c) => matches(str(b.nombre), c.name)), 'contacto', (c) => c.name, str(b.nombre))
+    await prisma.contact.delete({ where: { id: contact.id } })
+    return { ok: true, cliente: client.company, borrado: contact.name }
+  },
+
   // Client plan (what monthly production is built from) and notes
   async 'clients.update'(b) {
     const client = await findClient(b)
@@ -629,7 +651,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
         ...(endDate && { endDate }),
         ...(b.cancelEnd === true && { endDate: null }),
         ...(planType && { planType }),
-        ...(str(b.phone) && { phone: str(b.phone) }),
+        ...(str(b.phone) && { phone: waPhone(str(b.phone)) }),
         ...(str(b.planNotes) && { planNotes: str(b.planNotes) }),
         ...(notes && { notes: client.notes ? `${client.notes}\n\n${notes}` : notes }),
       },
@@ -787,7 +809,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     const pending = await prisma.income.findMany({ where: { clientId: client.id, status: { in: ['INVOICED', 'OVERDUE'] } }, orderBy: { period: 'asc' } })
     if (!pending.length) throw new Error(`${client.company} no tiene ingresos pendientes de cobro`)
     const contacts = await prisma.contact.findMany({ where: { clientId: client.id }, orderBy: { isPrimary: 'desc' } })
-    const phone = (client.phone || contacts.find((c) => c.phone)?.phone || '').replace(/\D/g, '')
+    const phone = waPhone(client.phone || contacts.find((c) => c.phone)?.phone)
     const total = money(pending.reduce((a, i) => a + i.amount, 0), pending[0].currency)
     const months = [...new Set(pending.map((i) => monthName(i.period)))].join(' y ')
     const mensaje = str(b.mensaje)
