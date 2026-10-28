@@ -69,6 +69,20 @@ function normPeriod(p: string) {
   return m && Number(m[2]) >= 1 && Number(m[2]) <= 12 ? `${m[1]}-${m[2].padStart(2, '0')}` : ''
 }
 
+// Report month: last month by default. The model sometimes guesses the wrong year ("2025-10"),
+// so a month more than a year back, or still to come, is moved to its latest occurrence up to now
+function reportPeriod(p: string) {
+  const last = lastPeriod()
+  const period = normPeriod(p)
+  if (!period) return last
+  const current = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 7)
+  const [ly] = last.split('-').map(Number)
+  if (period <= current && period > `${ly - 1}${last.slice(4)}`) return period
+  const month = period.slice(5)
+  const sameYear = `${current.slice(0, 4)}-${month}`
+  return sameYear <= current ? sameYear : `${Number(current.slice(0, 4)) - 1}-${month}`
+}
+
 // First instant of the month and of the next one, Argentina time
 function periodRange(period: string) {
   const [y, m] = period.split('-').map(Number)
@@ -379,7 +393,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
 
   // Builds (or rebuilds) the drafts and returns the list for Juanba. Default: last month
   async 'reports.propose'(b) {
-    const period = normPeriod(str(b.period)) || lastPeriod()
+    const period = reportPeriod(str(b.period))
     const only = str(b.cliente) ? [(await findClient({ q: str(b.cliente) })).id] : undefined
     const { failed } = await buildReports(period, only)
     const proposal = await reportsProposal(period)
@@ -387,7 +401,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   },
 
   async 'reports.send'(b) {
-    const period = normPeriod(str(b.period)) || lastPeriod()
+    const period = reportPeriod(str(b.period))
     const excluir = Array.isArray(b.excluir) ? b.excluir.map(str).filter(Boolean) : str(b.excluir) ? [str(b.excluir)] : []
     return sendReports(period, excluir, matches)
   },
