@@ -76,8 +76,7 @@ function reportPeriod(p: string) {
   const period = normPeriod(p)
   if (!period) return last
   const current = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 7)
-  const [ly] = last.split('-').map(Number)
-  if (period <= current && period > `${ly - 1}${last.slice(4)}`) return period
+  if (period <= current && period > `${Number(current.slice(0, 4)) - 1}${current.slice(4)}`) return period
   const month = period.slice(5)
   const sameYear = `${current.slice(0, 4)}-${month}`
   return sameYear <= current ? sameYear : `${Number(current.slice(0, 4)) - 1}-${month}`
