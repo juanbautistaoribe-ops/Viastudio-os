@@ -1,3 +1,5 @@
+import { getDolarBlue } from '@/lib/dolar'
+
 // Meta Marketing API (read only). The token is a system user's from the ViaStudio business portfolio,
 // with the clients' ad accounts shared to it as partner ("Ver rendimiento").
 
@@ -102,8 +104,9 @@ export type ReportData = {
   topAds: { name: string; spend: number; results: number; costPerResult: number | null; thumbnail: string | null }[]
 }
 
-export async function accountReport(accountId: string, period: string): Promise<ReportData> {
-  const id = accountId.startsWith('act_') ? accountId : `act_${accountId}`
+type Raw = { id: string; name: string; currency: string; cur?: InsightRow; prev?: InsightRow; campaigns: InsightRow[]; ads: InsightRow[] }
+
+async function fetchAccount(id: string, period: string): Promise<Raw> {
   const [account, cur, prev, campaigns, ads] = await Promise.all([
     graph<{ name: string; currency: string }>(id, { fields: 'name,currency' }),
     graph<{ data: InsightRow[] }>(`${id}/insights`, { fields: FIELDS, time_range: range(period) }),
@@ -111,11 +114,41 @@ export async function accountReport(accountId: string, period: string): Promise<
     graphAll<InsightRow>(`${id}/insights`, { level: 'campaign', fields: `campaign_name,${FIELDS}`, time_range: range(period) }),
     graphAll<InsightRow>(`${id}/insights`, { level: 'ad', fields: `ad_id,ad_name,${FIELDS}`, time_range: range(period) }),
   ])
-  const row = cur.data[0]
-  const kind = RESULTS.find((r) => actionCount(row?.actions, r.types) > 0) ?? RESULTS[RESULTS.length - 1]
+  return { id, name: account.name, currency: account.currency, cur: cur.data[0], prev: prev.data[0], campaigns, ads }
+}
+
+// Totals of several accounts. Reach is added up: the same person reached by two accounts counts twice
+function sum(ms: Metrics[]): Metrics {
+  if (ms.length === 1) return ms[0]
+  const t = ms.reduce((a, m) => ({ ...a, spend: a.spend + m.spend, impressions: a.impressions + m.impressions, reach: a.reach + m.reach, clicks: a.clicks + m.clicks, results: a.results + m.results }))
+  return { ...t, frequency: t.reach ? t.impressions / t.reach : 0, costPerResult: t.results ? t.spend / t.results : null }
+}
+
+// accountIds: one id or several separated by commas (a client with more than one ad account).
+// Several accounts make one report; if they're in different currencies everything goes to pesos at the blue rate
+export async function accountReport(accountIds: string, period: string): Promise<ReportData> {
+  const ids = accountIds.split(',').map((a) => a.trim()).filter(Boolean).map((a) => (a.startsWith('act_') ? a : `act_${a}`))
+  const raw = await Promise.all(ids.map((id) => fetchAccount(id, period)))
+  const currencies = [...new Set(raw.map((a) => a.currency))]
+  const currency = currencies.length === 1 ? currencies[0] : 'ARS'
+  let blue = 1
+  if (currencies.length > 1) {
+    const odd = currencies.find((c) => c !== 'ARS' && c !== 'USD')
+    if (odd) throw new Error(`No sé pasar ${odd} a pesos`)
+    const dolar = await getDolarBlue()
+    if (!dolar) throw new Error('No pude obtener el dólar blue para sumar cuentas en pesos y dólares')
+    blue = dolar.venta
+  }
+  const rate = (a: Raw) => (a.currency === currency ? 1 : blue)
+  const kind = RESULTS.find((r) => raw.some((a) => actionCount(a.cur?.actions, r.types) > 0)) ?? RESULTS[RESULTS.length - 1]
+  const m = (row: InsightRow | undefined, a: Raw) => {
+    const x = metrics(row, kind.types)
+    const spend = x.spend * rate(a)
+    return { ...x, spend, costPerResult: x.results ? spend / x.results : null }
+  }
 
   const byResults = <T extends { results: number; spend: number }>(a: T, b: T) => b.results - a.results || b.spend - a.spend
-  const adRows = ads.map((a) => ({ id: a.ad_id!, name: a.ad_name ?? 'Anuncio', ...metrics(a, kind.types) })).filter((a) => a.spend > 0).sort(byResults).slice(0, 3)
+  const adRows = raw.flatMap((a) => a.ads.map((ad) => ({ id: ad.ad_id!, name: ad.ad_name ?? 'Anuncio', ...m(ad, a) }))).filter((a) => a.spend > 0).sort(byResults).slice(0, 3)
   // Thumbnails are Meta CDN links: fine for the weeks a report is read
   const thumbs = await Promise.all(adRows.map((a) =>
     graph<{ creative?: { thumbnail_url?: string; image_url?: string } }>(a.id, { fields: 'creative{thumbnail_url,image_url}', thumbnail_width: '400', thumbnail_height: '400' })
@@ -124,12 +157,12 @@ export async function accountReport(accountId: string, period: string): Promise<
 
   return {
     period,
-    account: { id, name: account.name, currency: account.currency },
+    account: { id: ids.join(','), name: raw.map((a) => a.name).join(' + '), currency },
     resultLabel: kind.label,
     resultSingular: kind.singular,
-    current: metrics(row, kind.types),
-    previous: metrics(prev.data[0], kind.types),
-    campaigns: campaigns.map((c) => ({ name: c.campaign_name ?? 'Campaña', ...metrics(c, kind.types) })).filter((c) => c.spend > 0).sort(byResults)
+    current: sum(raw.map((a) => m(a.cur, a))),
+    previous: sum(raw.map((a) => m(a.prev, a))),
+    campaigns: raw.flatMap((a) => a.campaigns.map((c) => ({ name: c.campaign_name ?? 'Campaña', ...m(c, a) }))).filter((c) => c.spend > 0).sort(byResults)
       .map(({ name, spend, results, costPerResult }) => ({ name, spend, results, costPerResult })),
     topAds: adRows.map((a, i) => ({ name: a.name, spend: a.spend, results: a.results, costPerResult: a.costPerResult, thumbnail: thumbs[i] })),
   }

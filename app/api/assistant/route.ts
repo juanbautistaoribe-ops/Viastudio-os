@@ -82,6 +82,9 @@ function reportPeriod(p: string) {
   return sameYear <= current ? sameYear : `${Number(current.slice(0, 4)) - 1}-${month}`
 }
 
+// Client.metaAdAccountId holds one or more ad account ids separated by commas
+const accountsOf = (v: string | null) => (v ?? '').split(',').filter(Boolean)
+
 // First instant of the month and of the next one, Argentina time
 function periodRange(period: string) {
   const [y, m] = period.split('-').map(Number)
@@ -362,7 +365,7 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   async 'meta.accounts'() {
     if (!metaConfigured()) throw new Error('Todavía no está conectado Meta: falta cargar META_ACCESS_TOKEN en Vercel')
     const [accounts, clients] = await Promise.all([adAccounts(), prisma.client.findMany({ where: { status: 'ACTIVE' } })])
-    const linkedTo = (id: string) => clients.find((c) => c.metaAdAccountId === id)
+    const linkedTo = (id: string) => clients.find((c) => accountsOf(c.metaAdAccountId).includes(id))
     const guess = (name: string, business: string | null) =>
       clients.filter((c) => !c.metaAdAccountId && [c.company, c.name].some((n) => matches(n, name) || (business && matches(n, business))))
     return {
@@ -375,17 +378,24 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     }
   },
 
-  // links: [{"cliente":"Kleist","cuenta":"act_123"}]; cuenta "" unlinks
+  // links: [{"cliente":"Kleist","cuenta":"act_123"}]. A client can have several accounts (one report adds them up):
+  // linking adds to the ones it has; "reemplazar": true replaces them, "quitar": true removes that one, cuenta "" unlinks all
   async 'meta.link'(b) {
-    const links = Array.isArray(b.links) ? b.links as Body[] : [{ cliente: b.cliente, cuenta: b.cuenta }]
+    const links = Array.isArray(b.links) ? b.links as Body[] : [{ cliente: b.cliente, cuenta: b.cuenta, quitar: b.quitar, reemplazar: b.reemplazar }]
     const accounts = metaConfigured() ? await adAccounts() : []
     const done: string[] = []
     for (const l of links) {
       const client = await findClient({ q: str(l.cliente) })
       const q = str(l.cuenta)
       const account = q ? accounts.find((a) => a.id === q || a.id === `act_${q}`) ?? pickOne(accounts.filter((a) => matches(q, a.name)), 'cuenta', (a) => `${a.name} (${a.id})`, q) : null
-      await prisma.client.update({ where: { id: client.id }, data: { metaAdAccountId: account?.id ?? null } })
-      done.push(account ? `${client.company} → ${account.name}` : `${client.company} sin cuenta`)
+      const current = accountsOf(client.metaAdAccountId)
+      const ids = !account ? []
+        : l.quitar === true ? current.filter((id) => id !== account.id)
+        : l.reemplazar === true ? [account.id]
+        : [...new Set([...current, account.id])]
+      await prisma.client.update({ where: { id: client.id }, data: { metaAdAccountId: ids.join(',') || null } })
+      const names = ids.map((id) => accounts.find((a) => a.id === id)?.name ?? id)
+      done.push(names.length ? `${client.company} → ${names.join(' + ')}` : `${client.company} sin cuenta`)
     }
     return { ok: true, vinculados: done }
   },
