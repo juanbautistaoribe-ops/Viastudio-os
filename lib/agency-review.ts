@@ -12,6 +12,18 @@ import type { ReportData } from '@/lib/meta'
 const TZ = 'America/Argentina/Buenos_Aires'
 const DAY = 24 * 60 * 60 * 1000
 export const REVIEW_CATEGORY = 'Informes de agencia'
+// Fees are paid in arrears: October's is due on November 6th
+const DUE_DAY = 6
+
+// "2026-10" → "2026-11-06" (Argentina day)
+function dueDay(period: string) {
+  const [y, m] = period.split('-').map(Number)
+  const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+  return `${next}-${String(DUE_DAY).padStart(2, '0')}`
+}
+
+// End of the due day
+const dueDate = (period: string) => new Date(`${dueDay(period)}T23:59:59-03:00`)
 
 export function reviewUrl(id: string) {
   return `${APP_URL}/informes/${id}`
@@ -82,14 +94,17 @@ export async function agencySnapshot(now = new Date()) {
       termina: c.endDate ? c.endDate.toISOString().slice(0, 10) : null,
       notas: c.notes?.slice(0, 400) || null,
       cobros: own.map((i) => {
-        const start = new Date(`${normPeriod(i.period)}-01T00:00:00-03:00`)
+        const due = dueDate(normPeriod(i.period))
+        const late = (at: Date) => Math.max(0, Math.ceil((at.getTime() - due.getTime()) / DAY))
         return {
           mes: normPeriod(i.period),
           monto_pesos: round(ars(i)),
-          estado: i.status === 'COLLECTED' ? 'cobrado' : i.status === 'OVERDUE' ? 'vencido' : 'pendiente',
+          vence: dueDay(normPeriod(i.period)),
           ...(i.status === 'COLLECTED'
-            ? { dias_desde_el_1_hasta_que_pago: i.collectedAt ? round((i.collectedAt.getTime() - start.getTime()) / DAY) : null }
-            : { dias_impago_desde_el_1: round((now.getTime() - start.getTime()) / DAY) }),
+            ? { estado: 'cobrado', dias_de_atraso: i.collectedAt ? late(i.collectedAt) : null }
+            : now > due
+              ? { estado: 'vencido', dias_de_atraso: late(now) }
+              : { estado: 'todavía no vence' }),
           recordatorio_enviado: /Recordatorio de pago/.test(i.notes ?? ''),
         }
       }),
@@ -132,7 +147,8 @@ export async function agencySnapshot(now = new Date()) {
       top_3_porcentaje_de_la_facturacion: pct(top3.reduce((a, c) => a + fee(c), 0), mrr),
       terminan_en_los_proximos_60_dias: active.filter((c) => c.endDate && c.endDate.getTime() - now.getTime() < 60 * DAY).map((c) => `${c.company} (${c.endDate!.toISOString().slice(0, 10)})`),
       bajas_ultimos_6_meses: clients.filter((c) => c.status !== 'ACTIVE').map((c) => c.company),
-      deuda_total_pesos: round(incomes.filter((i) => i.status !== 'COLLECTED').reduce((a, i) => a + ars(i), 0)),
+      deuda_vencida_pesos: round(incomes.filter((i) => i.status !== 'COLLECTED' && now > dueDate(normPeriod(i.period))).reduce((a, i) => a + ars(i), 0)),
+      a_cobrar_que_todavia_no_vence_pesos: round(incomes.filter((i) => i.status !== 'COLLECTED' && now <= dueDate(normPeriod(i.period))).reduce((a, i) => a + ars(i), 0)),
       meses: months.map((m) => {
         const inc = recent.filter((i) => normPeriod(i.period) === m)
         const exp = expenses.filter((e) => e.date.toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 7) === m)
@@ -178,10 +194,11 @@ const REVIEW_SCHEMA = {
         properties: {
           cliente: { type: 'string' },
           veredicto: { type: 'string', enum: VERDICTS },
+          en_una_linea: { type: 'string', description: 'El motivo en menos de 15 palabras, para el resumen de WhatsApp.' },
           motivo: { type: 'string', description: 'Por qué, con los datos concretos (abono, pagos, carga de trabajo, resultados). 1 o 2 oraciones.' },
           sugerencia: { type: 'string', description: 'Qué hacer con este cliente. Vacío si no hace falta nada.' },
         },
-        required: ['cliente', 'veredicto', 'motivo', 'sugerencia'],
+        required: ['cliente', 'veredicto', 'en_una_linea', 'motivo', 'sugerencia'],
         additionalProperties: false,
       },
     },
@@ -211,7 +228,7 @@ type Review = {
   titular: string
   bien: string[]
   mal: string[]
-  clientes: { cliente: string; veredicto: (typeof VERDICTS)[number]; motivo: string; sugerencia: string }[]
+  clientes: { cliente: string; veredicto: (typeof VERDICTS)[number]; en_una_linea: string; motivo: string; sugerencia: string }[]
   acciones: { titulo: string; por_que: string; como: string[]; mensaje: string }[]
   seguimiento: string
   faltan_datos: string[]
@@ -227,6 +244,7 @@ Qué evaluás:
 Reglas:
 - Usá solo los datos que te pasan. Separá lo que es un dato de lo que es una inferencia ("parece", "probablemente"). No inventes causas, cifras de inflación ni comparaciones con el mercado.
 - Si los datos son pocos o no alcanzan para juzgar algo (por ejemplo, un solo mes de cobros, ningún gasto cargado), decilo y no saques conclusiones fuertes de ahí. Un dato que falta no es un dato malo: un cobro sin marcar puede ser un pago que Juanba no registró.
+- Los abonos se pagan mes vencido: el de un mes vence el día 6 del mes siguiente (el de octubre, el 6 de noviembre). Un abono que "todavía no vence" no es deuda ni atraso: no lo trates como problema ni mandes a reclamarlo antes de tiempo; como mucho, un aviso amable unos días antes del vencimiento. El atraso se cuenta desde el vencimiento.
 - ViaStudio OS es nuevo: "datos_desde" es el primer mes con datos y antes no hay nada. "cargado_en_el_sistema_desde" es cuándo se cargó el cliente, no cuándo empezó a trabajar con la agencia.
 - Reportes de Meta: se arman solos el día 1 con el mes anterior, para los clientes con "cuenta_de_meta_vinculada", y Juanba los revisa antes de mandarlos. Un cliente vinculado sin reporte todavía es porque se vinculó hace poco: no es un problema.
 - Las acciones son exactamente 3, para las próximas dos semanas, concretas (a quién, cuánto, cuándo) y que Juanba pueda hacer él mismo o con su asistente de WhatsApp (que puede mandar recordatorios de pago, armar propuestas, crear tareas y mandar mensajes). Priorizá lo que más plata mueve o más riesgo saca. No repitas una acción del informe anterior si los datos muestran que ya se hizo.
@@ -266,7 +284,7 @@ export function toMarkdown(r: Review, s: Awaited<ReturnType<typeof agencySnapsho
     `- Clientes activos: ${a.clientes_activos}, abono promedio ${money(a.abono_promedio)}`,
     `- Facturación por abonos: ${money(a.facturacion_mensual_por_abonos)} por mes`,
     last ? `- ${last.mes}: facturado ${money(last.facturado)}, cobrado ${money(last.cobrado)}${last.margen ? `, margen ${last.margen}` : ''}` : '',
-    `- Te deben en total: ${money(a.deuda_total_pesos)}`,
+    `- Deuda vencida: ${money(a.deuda_vencida_pesos)}. A cobrar que todavía no vence: ${money(a.a_cobrar_que_todavia_no_vence_pesos)}`,
     `- Los 3 clientes más grandes (${a.top_3_clientes.join(', ')}) son el ${a.top_3_porcentaje_de_la_facturacion}% de la facturación`,
     `## Lo que está bien`,
     ...r.bien.map((b) => `- ${b}`),
@@ -286,13 +304,17 @@ export function toMarkdown(r: Review, s: Awaited<ReturnType<typeof agencySnapsho
   ].filter(Boolean).join('\n\n')
 }
 
-export function toWhatsApp(r: Review, url: string) {
-  const flagged = r.clientes.filter((c) => c.veredicto === 'problema' || c.veredicto === 'a revisar')
+// Short on purpose: the worst ones only (clients already leaving don't count), the detail is behind the link
+export function toWhatsApp(r: Review, url: string, leaving: string[] = []) {
+  const flagged = r.clientes
+    .filter((c) => (c.veredicto === 'problema' || c.veredicto === 'a revisar') && !leaving.includes(c.cliente))
+    .sort((a, b) => Number(b.veredicto === 'problema') - Number(a.veredicto === 'problema'))
+    .slice(0, 3)
   return [
     `🧭 Informe de la agencia`,
     r.titular,
     `Las 3 acciones de esta quincena:\n${r.acciones.map((x, i) => `${i + 1}. ${x.titulo}`).join('\n')}`,
-    flagged.length ? `Clientes a mirar:\n${flagged.map((c) => `${ICON[c.veredicto]} ${c.cliente}: ${c.motivo}`).join('\n')}` : '',
+    flagged.length ? `Clientes a mirar:\n${flagged.map((c) => `${ICON[c.veredicto]} ${c.cliente}: ${c.en_una_linea}`).join('\n')}` : '',
     `El informe completo, con el paso a paso y los mensajes listos:\n${url}`,
     'Si querés profundizar en algo, preguntame.',
   ].filter(Boolean).join('\n\n')
@@ -320,7 +342,7 @@ export async function buildReview(now = new Date()) {
       authorId: owner.id,
     },
   })
-  await notifyJuanba(toWhatsApp(review, reviewUrl(doc.id)))
+  await notifyJuanba(toWhatsApp(review, reviewUrl(doc.id), snapshot.clientes.filter((c) => c.termina).map((c) => c.cliente)))
   return { id: doc.id, url: reviewUrl(doc.id) }
 }
 
