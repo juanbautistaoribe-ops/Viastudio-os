@@ -878,8 +878,12 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
 
   async 'events.list'(b) {
     const { start } = todayRangeAR()
-    const from = date(b.from) ?? start
-    const to = date(b.to) ?? new Date(from.getTime() + 7 * 24 * 60 * 60 * 1000)
+    // A bare day ("2026-10-30") means the whole day: from its start, up to the start of the next one
+    const day = (v: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(str(v)) ? new Date(`${str(v)}T00:00:00-03:00`) : null
+    const DAY = 24 * 60 * 60 * 1000
+    const from = day(b.from) ?? date(b.from) ?? start
+    const toDay = day(b.to)
+    const to = toDay ? new Date(toDay.getTime() + DAY) : date(b.to) ?? new Date(from.getTime() + 7 * DAY)
     const q = str(b.q)
     const events = await prisma.calendarEvent.findMany({ where: { startDate: { gte: from, lt: to } }, orderBy: { startDate: 'asc' }, take: 50 })
     const found = events.filter((e) => !q || matches(q, e.title, e.description, e.location)).slice(0, 15)
