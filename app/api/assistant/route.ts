@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { isWebhookAuthorized } from '@/lib/webhook-auth'
 import { logActivity } from '@/lib/activity'
@@ -9,10 +9,11 @@ import { buildItems, createProposal, dueFollowups, followupMessage, notifyJuanba
 import { adAccounts, metaConfigured } from '@/lib/meta'
 import { waPhone } from '@/lib/utils'
 import { buildReports, lastPeriod, monthlyReportsCheck, reportsProposal, reportUrl, sendReports } from '@/lib/meta-reports'
+import { agencyReviewCheck, buildReview, latestReview, reviewUrl } from '@/lib/agency-review'
 import { monthlyReactivationCheck, reactivationProposal, reactivationReport, sendReactivation } from '@/lib/reactivation'
 import { buildPlan, createProduction, formatProposal, isLastBusinessDay, nextPeriod, periodOf, type Override } from '@/lib/production'
 
-export const maxDuration = 60 // reactivation sends up to 20 spaced messages
+export const maxDuration = 300 // reactivation sends up to 20 spaced messages; the agency review runs after the response
 
 // Internal WhatsApp assistant (n8n): one endpoint, `action` picks the operation.
 // Confirmation of important changes happens in the agent conversation, before it calls this.
@@ -357,9 +358,26 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
   async 'reactivation.propose'(b) {
     if (b.auto === true) {
       const reports = await monthlyReportsCheck().catch((error) => ({ error: String(error) }))
+      // Days 3 and 17: the agency review takes a couple of minutes, so it runs after answering n8n
+      after(() => agencyReviewCheck())
       return { ...(await monthlyReactivationCheck()), reportes: reports }
     }
     return reactivationProposal()
+  },
+
+  // Agency review (twice a month, also on demand): the latest one, for questions like "¿qué cliente me conviene soltar?".
+  // generar:true builds a new one; it arrives over WhatsApp in a few minutes
+  async 'agency.review'(b) {
+    if (b.generar === true) {
+      after(() => buildReview().catch(async (error) => {
+        console.error('agency review', error)
+        await notifyJuanba(`⚠️ No pude armar el informe de la agencia: ${error instanceof Error ? error.message : 'error'}`)
+      }))
+      return { ok: true, aviso: 'Lo estoy armando: llega por WhatsApp en 2 o 3 minutos' }
+    }
+    const doc = await latestReview()
+    if (!doc) return { informe: null, aviso: 'Todavía no hay ningún informe. Se arma solo los días 3 y 17, o con generar:true' }
+    return { fecha: doc.createdAt, link: reviewUrl(doc.id), informe: doc.content }
   },
 
   // Ad accounts the Meta token can read, with the client each one is linked to (or the likely match)
