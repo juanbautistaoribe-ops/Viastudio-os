@@ -30,8 +30,8 @@ export function change(cur: number, prev: number) {
 const SUMMARY_SCHEMA = {
   type: 'object',
   properties: {
-    resumen: { type: 'string', description: 'Cómo le fue a la cuenta este mes, con los números clave y la comparación con el mes anterior. 2 a 4 oraciones.' },
-    proximo_mes: { type: 'string', description: 'Qué conviene hacer el mes que viene, concreto y basado en los datos. 1 o 2 oraciones.' },
+    resumen: { type: 'string', description: 'Cómo le fue a la cuenta este mes, empezando por lo que funcionó, con los números clave y la comparación con el mes anterior. 2 a 4 oraciones.' },
+    proximo_mes: { type: 'string', description: 'Qué vamos a hacer el mes que viene para seguir creciendo: potenciar lo que funcionó y mejorar lo que no. Concreto y basado en los datos. 1 o 2 oraciones.' },
   },
   required: ['resumen', 'proximo_mes'],
   additionalProperties: false,
@@ -39,7 +39,9 @@ const SUMMARY_SCHEMA = {
 
 const SYSTEM = `Escribís el resumen del reporte mensual de anuncios de Meta (Facebook e Instagram) que ViaStudio, una agencia de marketing de Reconquista (Argentina), le manda a su cliente.
 Español rioplatense con voseo, cercano y claro, para un dueño de negocio que no sabe de marketing: nada de siglas (CTR, CPM, CPC) ni jerga.
-Usá solo los números que te pasan. No inventes causas que no se ven en los datos ni prometas resultados. Si el mes vino peor, decilo con honestidad y sin dramatizar.
+Enfocate en lo que funcionó: arrancá por los logros del mes (los resultados conseguidos, el anuncio o la campaña que mejor anduvo, lo que mejoró respecto del mes anterior, a cuánta gente se llegó) y dales el protagonismo. Que se note el valor del trabajo sin sonar a venta ni exagerar: tono profesional y natural, sin superlativos vacíos ("¡excelente!", "increíble").
+Si algo vino peor, no lo escondas pero tampoco lo pongas al frente: mencionalo en una frase, sin dramatizar, y llevalo a "proximo_mes" como lo que vamos a mejorar.
+Usá solo los números que te pasan. No inventes causas que no se ven en los datos, no prometas resultados y nunca presentes como bueno algo que los números no respaldan.
 Montos en pesos con punto de miles ($85.000) o en dólares como US$120.`
 
 function fallbackSummary(d: ReportData) {
