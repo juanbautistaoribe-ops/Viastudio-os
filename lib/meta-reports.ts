@@ -200,10 +200,13 @@ export async function monthlyReportsCheck(now = new Date()) {
   const day = Number(now.toLocaleDateString('en-CA', { timeZone: TZ }).slice(8, 10))
   if (day > 5 || !metaConfigured()) return { enviado: false }
   const period = lastPeriod(now)
-  const linked = await prisma.client.count({ where: { status: 'ACTIVE', metaAdAccountId: { not: null } } })
-  const existing = await prisma.metaReport.count({ where: { period } })
-  if (!linked || existing) return { enviado: false }
-  const { failed } = await buildReports(period)
+  // Per client: one report sent early (e.g. mid-month) must not stop everyone else's
+  const missing = await prisma.client.findMany({
+    where: { status: 'ACTIVE', metaAdAccountId: { not: null }, metaReports: { none: { period } } },
+    select: { id: true },
+  })
+  if (!missing.length) return { enviado: false }
+  const { failed } = await buildReports(period, missing.map((c) => c.id))
   const proposal = await reportsProposal(period)
   const errors = failed.length ? `\n\n⚠️ No pude armar: ${failed.map((f) => `${f.cliente} (${f.error})`).join(', ')}` : ''
   if (proposal.mensaje || errors) await notifyJuanba(`${proposal.mensaje ?? ''}${errors}`.trim())
