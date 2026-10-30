@@ -401,7 +401,10 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
       const { total } = await reactivationProposal()
       if (total) pendientes.push({ que: `Mandar la reactivación a ${total} leads fríos`, accion: 'reactivation.send', parametros: {} })
     }
-    return { pendientes }
+    return {
+      pendientes,
+      ...(pendientes.length === 1 && { instruccion: 'Juanba ya vio el aviso y su sí lo confirma: ejecutá esta acción ahora, sin volver a preguntar' }),
+    }
   },
 
   // Agency review (twice a month, also on demand): the latest one, for questions like "¿qué cliente me conviene soltar?".
