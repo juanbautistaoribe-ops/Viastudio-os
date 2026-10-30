@@ -365,6 +365,45 @@ const actions: Record<string, (b: Body) => Promise<unknown>> = {
     return reactivationProposal()
   },
 
+  // What's waiting for Juanba's yes. Proposals sent by the 7:00 run aren't in the agent's memory,
+  // so a bare "dale" is resolved from the current state
+  async 'pending.approvals'() {
+    const now = new Date()
+    const ymd = now.toLocaleDateString('en-CA', { timeZone: TZ })
+    const day = Number(ymd.slice(8, 10))
+    const pendientes: { que: string; accion: string; parametros: Body }[] = []
+
+    // Production: proposed on the last business day of the month, for the next one
+    let lastDayReached = day <= 5
+    for (let d = 0; day >= 25 && !lastDayReached && d < 7; d++) {
+      const at = new Date(now.getTime() - d * 24 * 60 * 60 * 1000)
+      if (at.toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 7) !== ymd.slice(0, 7)) break
+      lastDayReached = await isLastBusinessDay(at)
+    }
+    if (lastDayReached) {
+      const period = day <= 5 ? currentPeriod() : nextPeriod(periodOf(now))
+      const loaded = await prisma.task.count({ where: { tags: { has: `prod-${period}` } } })
+      const plan = loaded ? null : await buildPlan(period)
+      if (plan?.items.length) pendientes.push({ que: `Cargar la producción de ${plan.mes}`, accion: 'production.create', parametros: { period } })
+    }
+
+    // Meta reports: built on days 1-5, for last month
+    if (day <= 10) {
+      const period = lastPeriod(now)
+      const { total } = await reportsProposal(period)
+      if (total) pendientes.push({ que: `Mandar ${total} reportes de Meta de ${monthName(period)}`, accion: 'reports.send', parametros: { period } })
+    }
+
+    // Cold leads: proposed on the first Monday of the month
+    const local = new Date(`${ymd}T12:00:00Z`)
+    const firstMonday = ((8 - new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1)).getUTCDay()) % 7) + 1
+    if (day >= firstMonday && day <= firstMonday + 3) {
+      const { total } = await reactivationProposal()
+      if (total) pendientes.push({ que: `Mandar la reactivación a ${total} leads fríos`, accion: 'reactivation.send', parametros: {} })
+    }
+    return { pendientes }
+  },
+
   // Agency review (twice a month, also on demand): the latest one, for questions like "¿qué cliente me conviene soltar?".
   // generar:true builds a new one; it arrives over WhatsApp in a few minutes
   async 'agency.review'(b) {
